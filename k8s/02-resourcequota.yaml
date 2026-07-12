@@ -1,0 +1,15 @@
+# The ceiling ci-utils' dispatch loop schedules against (arch doc s4.3).
+# Sized for the t2.medium worker (2 vCPU / ~4Gi): leaves headroom for kubelet
+# + system, and covers ci-utils(2x256Mi) + redis(128Mi) + concurrent scanners.
+# Tune up on a bigger worker to raise scan concurrency.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: sast-quota
+  namespace: sast
+spec:
+  hard:
+    requests.cpu: "1500m"
+    requests.memory: "3Gi"
+    limits.cpu: "2"
+    limits.memory: "3500Mi"

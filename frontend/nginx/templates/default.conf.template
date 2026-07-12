@@ -1,0 +1,60 @@
+# Rendered by the nginx image's envsubst at start. Only ${DOMAIN} is substituted
+# (NGINX_ENVSUBST_FILTER=DOMAIN in compose), so nginx runtime vars like $host
+# are preserved.
+
+# ---- HTTP :80 -- ACME challenge + app + artifacts (works before TLS is set up)
+server {
+    listen 80;
+    server_name ${DOMAIN};
+
+    # Certbot HTTP-01 challenge
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # Findings artifacts from the master-node backup PV (JSON dir listing).
+    location /artifacts/ {
+        alias /srv/artifacts/;
+        autoindex on;
+        autoindex_format json;
+        add_header Cache-Control "no-store";
+    }
+
+    # React SPA (served by the frontend container on :3000)
+    location / {
+        proxy_pass http://frontend:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# ---- HTTPS :443 -- TLS via certbot certs
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache   shared:SSL:10m;
+
+    location /artifacts/ {
+        alias /srv/artifacts/;
+        autoindex on;
+        autoindex_format json;
+        add_header Cache-Control "no-store";
+    }
+
+    location / {
+        proxy_pass http://frontend:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

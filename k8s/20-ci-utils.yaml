@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ci-utils-env
+  namespace: sast
+data:
+  SAST_NAMESPACE: "sast"
+  RESOURCE_QUOTA_NAME: "sast-quota"
+  REPOS_PVC: "sast-repos"
+  WORKER_NODE_SELECTOR_KEY: "sast.aotm/role"
+  WORKER_NODE_SELECTOR_VAL: "worker"
+  REDIS_URL: "redis://sast-redis:6379/0"
+  SONAR_HOST: "http://sonarqube.sast-system.svc.cluster.local:9000"
+  CI_UTILS_URL: "http://sast-ci-utils:8080"
+  ARTIFACTS_DIR: "/data/artifacts"
+  REPOS_DIR: "/repos"
+  GITLEAKS_IMAGE: "tejbruhath/sast-gitleaks:latest"
+  TRIVY_IMAGE: "tejbruhath/sast-trivy:latest"
+  SONAR_SCANNER_IMAGE: "tejbruhath/sast-sonar-scanner:latest"
+  MAX_RETRIES: "3"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sast-ci-utils
+  namespace: sast
+spec:
+  replicas: 1                 # singleton: exactly one dispatcher loop
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: { app: sast-ci-utils }
+  template:
+    metadata:
+      labels: { app: sast-ci-utils }
+    spec:
+      serviceAccountName: ci-utils
+      nodeSelector:
+        sast.aotm/role: worker
+      containers:
+        # HTTP API (DRF via gunicorn) — records results into Redis, wakes dispatcher
+        - name: api
+          image: tejbruhath/sast-ci-utils:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: { name: ci-utils-env }
+          ports:
+            - containerPort: 8080
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits: { cpu: "500m", memory: "512Mi" }
+          volumeMounts:
+            - { name: repos, mountPath: /repos }
+            - { name: artifacts, mountPath: /data/artifacts }
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+        # Singleton dispatch + k8s-watch loop — only writer of Jobs/state
+        - name: dispatcher
+          image: tejbruhath/sast-ci-utils:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "manage.py", "run_dispatcher"]
+          envFrom:
+            - configMapRef: { name: ci-utils-env }
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits: { cpu: "500m", memory: "512Mi" }
+          volumeMounts:
+            - { name: repos, mountPath: /repos }
+            - { name: artifacts, mountPath: /data/artifacts }
+      volumes:
+        - name: repos
+          persistentVolumeClaim: { claimName: sast-repos }
+        - name: artifacts
+          persistentVolumeClaim: { claimName: ci-utils-artifacts }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sast-ci-utils
+  namespace: sast
+spec:
+  type: NodePort
+  selector: { app: sast-ci-utils }
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30084

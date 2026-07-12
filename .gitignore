@@ -1,0 +1,10 @@
+aws/*.pem
+aws/instances.env
+node_modules/
+dist/
+__pycache__/
+*.pyc
+frontend/certbot/conf/
+frontend/certbot/www/
+frontend/artifacts/*
+!frontend/artifacts/.gitkeep

@@ -1,0 +1,37 @@
+# ci-utils dispatcher needs to create/delete/watch scanner Jobs, read pods,
+# and read the ResourceQuota status for the capacity check. Scoped to ns sast.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ci-utils
+  namespace: sast
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ci-utils
+  namespace: sast
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "delete", "get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["resourcequotas"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-utils
+  namespace: sast
+subjects:
+  - kind: ServiceAccount
+    name: ci-utils
+    namespace: sast
+roleRef:
+  kind: Role
+  name: ci-utils
+  apiGroup: rbac.authorization.k8s.io

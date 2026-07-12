@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Progressive SAST Findings Explorer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root{
+      --viz-panel:#0b1020;
+      --viz-card:#11182b;
+      --viz-chip-card:#172038;
+      --viz-text:#edf2ff;
+      --viz-muted:#95a1ba;
+      --viz-border:#26314a;
+      --viz-accent:#7c9cff;
+      --viz-accent-text:#081020;
+      --viz-accent-bg:#8aa7ff;
+      --viz-accent-bg-subtle:#1a2750;
+      --viz-series-1:#72d6c9;
+      --viz-series-2:#f8c46b;
+      --viz-series-3:#ff8a65;
+      --viz-series-4:#ff5f6d;
+    }
+
+    * { box-sizing: border-box; }
+    body{
+      margin:0;
+      min-height:100vh;
+      background:#080d18;
+      color:var(--viz-text);
+      font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    }
+
+    button,input{font:inherit}
+    button{color:inherit}
+
+    .app-shell{
+      width:100%;
+      max-width:1600px;
+      margin:0 auto;
+      padding:20px;
+    }
+
+    .metric-card{
+      border:1px solid var(--viz-border);
+      background:var(--viz-card);
+      border-radius:14px;
+      padding:14px;
+    }
+
+    .viz-stat-value{
+      margin-top:4px;
+      font-size:1.55rem;
+      line-height:1;
+      font-weight:700;
+    }
+
+    .viz-badge{
+      display:inline-flex;
+      align-items:center;
+      min-height:24px;
+      padding:3px 8px;
+      border-radius:999px;
+      border:1px solid var(--viz-border);
+      background:var(--viz-accent-bg-subtle);
+      color:var(--viz-text);
+      font-size:.75rem;
+      white-space:nowrap;
+    }
+
+    .viz-callout{
+      border:1px solid var(--viz-accent);
+      background:var(--viz-accent-bg-subtle);
+      border-radius:14px;
+      padding:12px 14px;
+    }
+
+    #sast-ui .frame{
+      border:1px solid var(--viz-border);
+      border-radius:16px;
+      overflow:hidden;
+      background:var(--viz-panel)
+    }
+
+    #sast-ui .top{
+      border-bottom:1px solid var(--viz-border);
+      background:var(--viz-card)
+    }
+
+    #sast-ui .col{
+      width:210px;
+      flex:0 0 210px;
+      border-right:1px solid var(--viz-border)
+    }
+
+    #sast-ui.line-open .col{
+      width:118px;
+      flex-basis:118px
+    }
+
+    #sast-ui .item{
+      width:100%;
+      padding:10px;
+      text-align:left;
+      border:1px solid transparent;
+      border-radius:10px
+    }
+
+    #sast-ui .item:hover{
+      background:var(--viz-chip-card)
+    }
+
+    #sast-ui .item.active{
+      background:var(--viz-accent-bg-subtle);
+      border-color:var(--viz-accent)
+    }
+
+    #sast-ui .chip{
+      border:1px solid var(--viz-border);
+      border-radius:999px;
+      padding:7px 11px;
+      white-space:nowrap;
+      background:var(--viz-panel);
+      font-size:.82rem;
+      transition:.15s ease;
+    }
+
+    #sast-ui .chip:hover{
+      border-color:var(--viz-accent);
+      background:var(--viz-chip-card);
+    }
+
+    #sast-ui .chip.active{
+      background:var(--viz-accent-bg);
+      color:var(--viz-accent-text);
+      border-color:var(--viz-accent)
+    }
+
+    #sast-ui .dot{
+      width:9px;
+      height:9px;
+      border-radius:99px;
+      display:inline-block;
+      flex:none
+    }
+
+    #sast-ui pre{
+      background:var(--viz-panel);
+      border:1px solid var(--viz-border);
+      border-radius:12px;
+      padding:12px;
+      overflow:auto;
+      font-size:.78rem;
+      line-height:1.55
+    }
+
+    #sast-ui .focus{
+      display:block;
+      background:var(--viz-accent-bg-subtle);
+      border-left:3px solid var(--viz-accent);
+      padding-left:6px
+    }
+
+    #sast-ui .scroll{
+      scrollbar-width:thin;
+      scrollbar-color:var(--viz-border) transparent
+    }
+
+    #sast-ui input{
+      width:100%;
+      border:1px solid var(--viz-border);
+      border-radius:12px;
+      background:var(--viz-panel);
+      color:var(--viz-text);
+      padding:9px 12px;
+      outline:none;
+    }
+
+    #sast-ui input:focus{
+      border-color:var(--viz-accent);
+      box-shadow:0 0 0 3px color-mix(in srgb,var(--viz-accent) 20%,transparent);
+    }
+
+    .text-muted{color:var(--viz-muted)}
+    .hidden{display:none!important}
+
+    @media(max-width:680px){
+      .app-shell{padding:10px}
+      #sast-ui .work{display:block}
+      #sast-ui .columns{border-bottom:1px solid var(--viz-border)}
+      #sast-ui.line-open .col{width:145px;flex-basis:145px}
+    }
+  </style>
+</head>
+
+<body>
+  <main class="app-shell">
+    <section id="sast-ui" class="w-full space-y-4">
+      <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div class="metric-card">
+          <div class="text-sm text-muted">Active</div>
+          <div id="m-active" class="viz-stat-value">113</div>
+        </div>
+        <div class="metric-card">
+          <div class="text-sm text-muted">Critical</div>
+          <div id="m-critical" class="viz-stat-value">3</div>
+        </div>
+        <div class="metric-card">
+          <div class="text-sm text-muted">Auto-resolved</div>
+          <div id="m-resolved" class="viz-stat-value">0</div>
+        </div>
+        <div class="metric-card">
+          <div class="text-sm text-muted">Runs</div>
+          <div id="m-runs" class="viz-stat-value">65</div>
+        </div>
+      </div>
+
+      <div class="frame">
+        <header class="top space-y-3 p-3">
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div class="min-w-0">
+              <div id="crumb" class="truncate text-sm text-muted">Repositories</div>
+              <div id="title" class="font-medium">All repositories</div>
+            </div>
+            <div class="flex gap-2">
+              <span class="viz-badge">Fingerprint sync ON</span>
+              <button id="reset" type="button" class="chip">Reset</button>
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-2 lg:flex-row">
+            <label class="flex-1">
+              <span class="sr-only">Search current level</span>
+              <input id="search" type="search" placeholder="Search repositories…" />
+            </label>
+            <div id="filters" class="scroll flex gap-2 overflow-x-auto pb-1"></div>
+          </div>
+        </header>
+
+        <div id="sync-note" class="hidden border-b px-3 py-2 text-sm"
+             style="border-color:var(--viz-border);background:var(--viz-accent-bg-subtle)"></div>
+
+        <div class="work flex min-h-[520px]">
+          <div id="columns" class="columns scroll flex flex-1 overflow-x-auto"></div>
+          <aside id="detail" class="hidden min-w-0 flex-1 p-4"
+                 style="background:var(--viz-card)" aria-live="polite"></aside>
+        </div>
+      </div>
+
+      <div class="viz-callout text-sm">
+        Default behavior: only fingerprints present in the selected commit remain active.
+        Missing parent fingerprints are retained only in resolved history.
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const repos = [
+        {
+          id: 'proofx',
+          name: 'aotm_proofx',
+          findings: 81,
+          runs: 34,
+          sev: 'critical',
+          updated: '8 min ago',
+          branches: [
+            {
+              id: 'sas_test',
+              name: 'sas_test',
+              owner: 'GitLab Runner',
+              findings: 81,
+              sev: 'critical',
+              updated: '8 min ago',
+              commits: [
+                {
+                  id: 'efe62e94',
+                  msg: 'Merge patch-1 into sas_test',
+                  author: 'GitLab Runner',
+                  date: '24 Mar · 11:10',
+                  status: 'passed',
+                  parent: ['secret-17', 'cve-4863', 'sonar-27', 'ci-token-38'],
+                  findings: [
+                    {
+                      id: 'cve-4863',
+                      sev: 'critical',
+                      tool: 'trivy',
+                      type: 'vulnerability',
+                      file: 'requirements.txt',
+                      line: null,
+                      rule: 'CVE-2023-4863',
+                      life: 'existing',
+                      msg: 'Pillow: heap buffer overflow in WebP codec.',
+                      package: 'Pillow',
+                      installed: '9.0.0',
+                      fixed: '10.0.1',
+                      cvss: '9.8'
+                    },
+                    {
+                      id: 'sonar-27',
+                      sev: 'high',
+                      tool: 'sonarqube',
+                      type: 'code_smell',
+                      file: 'vulnerable_payload.py',
+                      line: 27,
+                      rule: 'python:S3776',
+                      life: 'existing',
+                      msg: 'Reduce Cognitive Complexity from 151 to 15.',
+                      effort: '45 min'
+                    },
+                    {
+                      id: 'sonar-61',
+                      sev: 'high',
+                      tool: 'sonarqube',
+                      type: 'bug',
+                      file: 'vulnerable_payload.py',
+                      line: 61,
+                      rule: 'python:S930',
+                      life: 'new',
+                      msg: 'Incorrect number of arguments passed to function.',
+                      effort: '10 min'
+                    },
+                    {
+                      id: 'cve-6345',
+                      sev: 'medium',
+                      tool: 'trivy',
+                      type: 'vulnerability',
+                      file: 'requirements.txt',
+                      line: null,
+                      rule: 'CVE-2024-6345',
+                      life: 'new',
+                      msg: 'Upgrade setuptools to a fixed version.',
+                      package: 'setuptools',
+                      installed: '65.5.0',
+                      fixed: '70.0.0',
+                      cvss: '6.5'
+                    },
+                    {
+                      id: 'todo-42',
+                      sev: 'low',
+                      tool: 'sonarqube',
+                      type: 'code_smell',
+                      file: '.gitlab-ci.yml',
+                      line: 42,
+                      rule: 'python:S1135',
+                      life: 'existing',
+                      msg: 'Track the work required by this TODO.',
+                      effort: '5 min'
+                    }
+                  ]
+                },
+                {
+                  id: '91bc60d2',
+                  msg: 'Add SAST aggregation schema',
+                  author: 'Tej',
+                  date: '23 Mar · 18:42',
+                  status: 'failed',
+                  parent: [],
+                  findings: [
+                    {
+                      id: 'secret-17',
+                      sev: 'critical',
+                      tool: 'gitleaks',
+                      type: 'secret',
+                      file: 'vulnerable_payload.py',
+                      line: 17,
+                      rule: 'generic-api-key',
+                      life: 'new',
+                      msg: 'Generic API key detected in source.'
+                    },
+                    {
+                      id: 'cve-4863',
+                      sev: 'critical',
+                      tool: 'trivy',
+                      type: 'vulnerability',
+                      file: 'requirements.txt',
+                      line: null,
+                      rule: 'CVE-2023-4863',
+                      life: 'new',
+                      msg: 'Pillow: heap buffer overflow in WebP codec.'
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              id: 'main',
+              name: 'main',
+              owner: 'Tej',
+              findings: 18,
+              sev: 'high',
+              updated: '2 days ago',
+              commits: [
+                {
+                  id: '8d7ad140',
+                  msg: 'Stabilize result aggregator',
+                  author: 'Tej',
+                  date: '22 Mar · 09:12',
+                  status: 'passed',
+                  parent: [],
+                  findings: [
+                    {
+                      id: 'agg-88',
+                      sev: 'high',
+                      tool: 'sonarqube',
+                      type: 'code_smell',
+                      file: 'aggregator.py',
+                      line: 88,
+                      rule: 'python:S3776',
+                      life: 'new',
+                      msg: 'Reduce Cognitive Complexity from 24 to 15.'
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          id: 'ci-utils',
+          name: 'ci-utils',
+          findings: 23,
+          runs: 19,
+          sev: 'high',
+          updated: '37 min ago',
+          branches: [
+            {
+              id: 'main',
+              name: 'main',
+              owner: 'Platform Team',
+              findings: 23,
+              sev: 'high',
+              updated: '37 min ago',
+              commits: [
+                {
+                  id: '1af83c11',
+                  msg: 'Persist finding fingerprints',
+                  author: 'Platform Team',
+                  date: '24 Mar · 10:41',
+                  status: 'passed',
+                  parent: [],
+                  findings: [
+                    {
+                      id: 'redis-54',
+                      sev: 'high',
+                      tool: 'sonarqube',
+                      type: 'security_hotspot',
+                      file: 'redis_store.py',
+                      line: 54,
+                      rule: 'python:S2245',
+                      life: 'new',
+                      msg: 'Review random number generator for security use.'
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          id: 'console',
+          name: 'security-console',
+          findings: 9,
+          runs: 12,
+          sev: 'medium',
+          updated: '1 hr ago',
+          branches: [
+            {
+              id: 'develop',
+              name: 'develop',
+              owner: 'Frontend Team',
+              findings: 9,
+              sev: 'medium',
+              updated: '1 hr ago',
+              commits: [
+                {
+                  id: '7ce31b0a',
+                  msg: 'Add finding detail drawer',
+                  author: 'Frontend Team',
+                  date: '24 Mar · 09:52',
+                  status: 'passed',
+                  parent: [],
+                  findings: [
+                    {
+                      id: 'npm-1',
+                      sev: 'medium',
+                      tool: 'trivy',
+                      type: 'vulnerability',
+                      file: 'package-lock.json',
+                      line: null,
+                      rule: 'CVE-2025-0001',
+                      life: 'new',
+                      msg: 'Development dependency has a known vulnerability.'
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ];
+
+      const levels = ['repo', 'branch', 'commit', 'severity', 'tool', 'file', 'line'];
+      const names = {
+        repo: 'Repositories',
+        branch: 'Branches',
+        commit: 'Commits',
+        severity: 'Severity',
+        tool: 'Tools',
+        file: 'Files',
+        line: 'Lines'
+      };
+
+      const filterMap = {
+        repo: ['Recent commit', 'Most findings', 'Highest severity', 'Most runs'],
+        branch: ['Authors', 'Most severity', 'Oldest', 'Active findings'],
+        commit: ['Authors', 'Newest', 'Pipeline status', 'New findings', 'Resolved findings'],
+        severity: ['Lifecycle', 'Type', 'Confidence'],
+        tool: ['Tool version', 'Ruleset', 'Finding type'],
+        file: ['Changed only', 'Language', 'Owner', 'Density'],
+        line: ['Lifecycle', 'Rule ID', 'First seen', 'Assignee']
+      };
+
+      const state = {
+        repo: null,
+        branch: null,
+        commit: null,
+        severity: null,
+        tool: null,
+        file: null,
+        line: null,
+        search: '',
+        filter: null,
+        resolved: false
+      };
+
+      const $ = id => document.getElementById(id);
+      const rank = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+
+      const repo = () => repos.find(x => x.id === state.repo);
+      const branch = () => repo()?.branches.find(x => x.id === state.branch);
+      const commit = () => branch()?.commits.find(x => x.id === state.commit);
+
+      const resolved = () => {
+        const c = commit();
+        if (!c) return [];
+
+        const active = new Set(c.findings.map(f => f.id));
+
+        return c.parent
+          .filter(id => !active.has(id))
+          .map(id => ({
+            id,
+            sev: id.includes('secret') ? 'critical' : 'high',
+            tool: 'gitleaks',
+            type: 'secret',
+            file: id.includes('ci-') ? '.gitlab-ci.yml' : 'vulnerable_payload.py',
+            line: id.includes('38') ? 38 : 17,
+            rule: 'generic-secret',
+            life: 'resolved',
+            msg: 'Absent from the next commit; automatically resolved.'
+          }));
+      };
+
+      const findings = () =>
+        commit()
+          ? [...commit().findings, ...(state.resolved ? resolved() : [])]
+          : [];
+
+      const esc = s =>
+        String(s ?? '').replace(/[&<>"']/g, c => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        })[c]);
+
+      const color = s => ({
+        critical: 'var(--viz-series-4)',
+        high: 'var(--viz-series-3)',
+        medium: 'var(--viz-series-2)',
+        low: 'var(--viz-series-1)'
+      })[s] || 'var(--viz-muted)';
+
+      function after(level) {
+        levels.slice(levels.indexOf(level) + 1).forEach(k => state[k] = null);
+      }
+
+      function visible() {
+        const out = ['repo'];
+
+        for (let i = 0; i < levels.length - 1; i++) {
+          if (state[levels[i]]) out.push(levels[i + 1]);
+          else break;
+        }
+
+        return out;
+      }
+
+      function current() {
+        for (let i = levels.length - 1; i >= 0; i--) {
+          if (state[levels[i]]) return levels[Math.min(i + 1, 6)];
+        }
+        return 'repo';
+      }
+
+      function raw(level) {
+        if (level === 'repo') {
+          return repos.map(x => ({
+            id: x.id,
+            title: x.name,
+            meta: `${x.findings} findings · ${x.updated}`,
+            extra: `${x.runs} runs`,
+            sev: x.sev
+          }));
+        }
+
+        if (level === 'branch') {
+          return (repo()?.branches || []).map(x => ({
+            id: x.id,
+            title: x.name,
+            meta: `${x.findings} active · ${x.updated}`,
+            extra: x.owner,
+            sev: x.sev
+          }));
+        }
+
+        if (level === 'commit') {
+          return (branch()?.commits || []).map(x => {
+            const active = new Set(x.findings.map(f => f.id));
+            const r = x.parent.filter(id => !active.has(id)).length;
+
+            return {
+              id: x.id,
+              title: x.id,
+              meta: x.msg,
+              extra: `${x.author} · ${r} resolved`,
+              status: x.status
+            };
+          });
+        }
+
+        const fs = findings();
+
+        if (level === 'severity') {
+          return [...new Set(fs.map(f => f.sev))]
+            .sort((a, b) => rank[b] - rank[a])
+            .map(x => ({
+              id: x,
+              title: x,
+              meta: `${fs.filter(f => f.sev === x).length} findings`,
+              sev: x
+            }));
+        }
+
+        const a = fs.filter(f => !state.severity || f.sev === state.severity);
+
+        if (level === 'tool') {
+          return [...new Set(a.map(f => f.tool))].map(x => ({
+            id: x,
+            title: x,
+            meta: `${a.filter(f => f.tool === x).length} findings`,
+            extra: {
+              gitleaks: '8.18.0',
+              trivy: '0.58.1',
+              sonarqube: '9.9.4'
+            }[x]
+          }));
+        }
+
+        const b = a.filter(f => !state.tool || f.tool === state.tool);
+
+        if (level === 'file') {
+          return [...new Set(b.map(f => f.file))].map(x => ({
+            id: x,
+            title: x,
+            meta: `${b.filter(f => f.file === x).length} findings`,
+            extra: x.split('.').pop().toUpperCase()
+          }));
+        }
+
+        return b
+          .filter(f => !state.file || f.file === state.file)
+          .map(f => ({
+            id: f.id,
+            title: f.line == null ? 'Manifest' : `Line ${f.line}`,
+            meta: f.msg,
+            extra: f.rule,
+            sev: f.sev,
+            finding: f
+          }));
+      }
+
+      function items(level) {
+        let a = raw(level).filter(x =>
+          `${x.title} ${x.meta} ${x.extra || ''}`
+            .toLowerCase()
+            .includes(state.search.toLowerCase())
+        );
+
+        if (['Highest severity', 'Most severity'].includes(state.filter)) {
+          a.sort((x, y) => (rank[y.sev] || 0) - (rank[x.sev] || 0));
+        }
+
+        if (['Most findings', 'Active findings'].includes(state.filter)) {
+          a.sort((x, y) => (parseInt(y.meta) || 0) - (parseInt(x.meta) || 0));
+        }
+
+        if (state.filter === 'Most runs') {
+          a.sort((x, y) => (parseInt(y.extra) || 0) - (parseInt(x.extra) || 0));
+        }
+
+        return a;
+      }
+
+      function select(level, item) {
+        state[level] = item.id;
+        after(level);
+        state.search = '';
+        state.filter = null;
+        $('search').value = '';
+
+        if (level === 'line') {
+          state.line = item.id;
+          showDetail(item.finding);
+        } else {
+          hideDetail();
+        }
+
+        render();
+      }
+
+      function renderCols() {
+        const host = $('columns');
+        host.innerHTML = '';
+
+        visible().forEach(level => {
+          const col = document.createElement('section');
+          col.className = 'col';
+
+          const list = items(level);
+
+          col.innerHTML = `
+            <div class="border-b p-3"
+                 style="border-color:var(--viz-border);background:var(--viz-card)">
+              <div class="text-sm font-medium">${names[level]}</div>
+              <div class="text-sm text-muted">${list.length} options</div>
+            </div>
+            <div class="space-y-1 p-2"></div>
+          `;
+
+          const body = col.lastElementChild;
+
+          list.forEach(x => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = `item ${state[level] === x.id ? 'active' : ''}`;
+
+            b.innerHTML = `
+              <div class="flex items-center gap-2 font-medium">
+                ${x.sev
+                  ? `<span class="dot" style="background:${color(x.sev)}"></span>`
+                  : ''}
+                <span class="truncate">${esc(x.title)}</span>
+                ${x.status ? `<span class="viz-badge">${x.status}</span>` : ''}
+              </div>
+              <div class="mt-1 line-clamp-2 text-sm text-muted">
+                ${esc(x.meta || '')}
+              </div>
+              ${x.extra
+                ? `<div class="mt-2 truncate text-sm text-muted">${esc(x.extra)}</div>`
+                : ''}
+            `;
+
+            b.addEventListener('click', () => select(level, x));
+            body.appendChild(b);
+          });
+
+          if (!list.length) {
+            body.innerHTML = '<div class="p-3 text-sm text-muted">No matches.</div>';
+          }
+
+          host.appendChild(col);
+        });
+
+        requestAnimationFrame(() => {
+          host.scrollLeft = host.scrollWidth;
+        });
+      }
+
+      function renderTop() {
+        const parts = [
+          repo()?.name,
+          branch()?.name,
+          commit()?.id,
+          state.severity,
+          state.tool,
+          state.file,
+          state.line ? 'finding detail' : null
+        ].filter(Boolean);
+
+        $('crumb').textContent = parts.length
+          ? `Repositories / ${parts.join(' / ')}`
+          : 'Repositories';
+
+        $('title').textContent = parts.at(-1) || 'All repositories';
+
+        const lvl = state.line ? 'line' : current();
+        $('search').placeholder = `Search ${names[lvl].toLowerCase()}…`;
+
+        const f = $('filters');
+        f.innerHTML = '';
+
+        (filterMap[lvl] || []).forEach(n => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = `chip ${state.filter === n ? 'active' : ''}`;
+          b.textContent = n;
+
+          b.addEventListener('click', () => {
+            state.filter = state.filter === n ? null : n;
+            render();
+          });
+
+          f.appendChild(b);
+        });
+
+        if (commit()) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = `chip ${state.resolved ? 'active' : ''}`;
+          b.textContent = `Resolved history (${resolved().length})`;
+
+          b.addEventListener('click', () => {
+            state.resolved = !state.resolved;
+            ['severity', 'tool', 'file', 'line'].forEach(k => state[k] = null);
+            hideDetail();
+            render();
+          });
+
+          f.appendChild(b);
+        }
+
+        const note = $('sync-note');
+
+        if (commit() && resolved().length) {
+          note.classList.remove('hidden');
+          note.textContent =
+            `${resolved().length} parent fingerprint(s) are absent in this commit ` +
+            `and were removed from the active tree.`;
+        } else {
+          note.classList.add('hidden');
+        }
+      }
+
+      function renderMetrics() {
+        const fs = commit()?.findings ||
+          repos.flatMap(r =>
+            r.branches.flatMap(b => b.commits[0]?.findings || [])
+          );
+
+        $('m-active').textContent = commit()
+          ? fs.length
+          : repos.reduce((n, r) => n + r.findings, 0);
+
+        $('m-critical').textContent =
+          fs.filter(f => f.sev === 'critical').length;
+
+        $('m-resolved').textContent =
+          commit() ? resolved().length : 0;
+
+        $('m-runs').textContent =
+          repo()?.runs || repos.reduce((n, r) => n + r.runs, 0);
+      }
+
+      function showDetail(f) {
+        if (!f) return;
+
+        document.getElementById('sast-ui').classList.add('line-open');
+
+        const d = $('detail');
+        d.classList.remove('hidden');
+
+        const manifest = f.line == null;
+
+        d.innerHTML = `
+          <div class="space-y-4">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="dot" style="background:${color(f.sev)}"></span>
+                  <span class="font-medium">${f.sev.toUpperCase()}</span>
+                  <span class="viz-badge">${f.life}</span>
+                  <span class="viz-badge">${f.tool}</span>
+                </div>
+
+                <h2 class="mt-2 font-medium">${esc(f.msg)}</h2>
+
+                <div class="mt-1 text-sm text-muted">
+                  ${esc(f.file)}${manifest ? '' : ` · line ${f.line}`}
+                </div>
+              </div>
+
+              <button id="close" type="button" class="chip">Close</button>
+            </div>
+
+            <div class="grid gap-2 sm:grid-cols-2">
+              ${[
+                ['Rule', f.rule],
+                ['Fingerprint', f.id],
+                ['Type', f.type],
+                ['Lifecycle', f.life],
+                f.fixed ? ['Fixed version', f.fixed] : null,
+                f.cvss ? ['CVSS', f.cvss] : null,
+                f.effort ? ['Effort', f.effort] : null
+              ]
+                .filter(Boolean)
+                .map(([k, v]) => `
+                  <div class="rounded-xl border p-3"
+                       style="border-color:var(--viz-border)">
+                    <div class="text-sm text-muted">${k}</div>
+                    <div class="mt-1 break-words text-sm font-medium">${esc(v)}</div>
+                  </div>
+                `)
+                .join('')}
+            </div>
+
+            <section>
+              <div class="mb-2 font-medium">
+                ${manifest ? 'Dependency context' : 'Code context'}
+              </div>
+
+              <pre>${
+                manifest
+                  ? `  8  Pillow==9.0.0
+<span class="focus">  9  setuptools==65.5.0</span>
+ 10  requests==2.31.0`
+                  : `${String(f.line - 1).padStart(3)}  result = validate(payload)
+<span class="focus">${String(f.line).padStart(3)}  if result and user and context:</span>
+${String(f.line + 1).padStart(3)}      return execute(result)`
+              }</pre>
+            </section>
+
+            <section class="rounded-xl border p-3"
+                     style="border-color:var(--viz-border)">
+              <div class="font-medium">Recommended action</div>
+
+              <p class="mt-2 text-sm">
+                ${
+                  f.tool === 'trivy'
+                    ? `Upgrade ${f.package || 'the dependency'}${
+                        f.fixed ? ` to ${f.fixed} or later` : ''
+                      }, then re-run the pipeline.`
+                    : f.tool === 'gitleaks'
+                    ? 'Revoke and rotate the credential, remove it from source, then re-run the scan.'
+                    : 'Fix the flagged code path, add a regression test, and verify the next scan.'
+                }
+              </p>
+
+              <div class="mt-3 flex flex-wrap gap-2">
+                <button type="button" class="chip">Assign</button>
+                <button type="button" class="chip">Create issue</button>
+                <button type="button" class="chip">Accept risk</button>
+                <button type="button" class="chip">Raw scan</button>
+              </div>
+            </section>
+          </div>
+        `;
+
+        d.querySelector('#close').addEventListener('click', () => {
+          state.line = null;
+          hideDetail();
+          render();
+        });
+      }
+
+      function hideDetail() {
+        document.getElementById('sast-ui').classList.remove('line-open');
+        $('detail').classList.add('hidden');
+        $('detail').innerHTML = '';
+      }
+
+      function render() {
+        renderTop();
+        renderMetrics();
+        renderCols();
+
+        if (state.line) {
+          showDetail(findings().find(f => f.id === state.line));
+        }
+      }
+
+      $('search').addEventListener('input', e => {
+        state.search = e.target.value;
+        renderCols();
+      });
+
+      $('reset').addEventListener('click', () => {
+        levels.forEach(k => state[k] = null);
+        state.search = '';
+        state.filter = null;
+        state.resolved = false;
+        $('search').value = '';
+        hideDetail();
+        render();
+      });
+
+      render();
+    })();
+  </script>
+</body>
+</html>

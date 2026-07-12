@@ -1,0 +1,26 @@
+# Shared worker-node PVCs. RWO is sufficient: ci-utils + every scanner Job for a
+# job land on the same worker node (nodeSelector), and RWO allows multiple pods
+# on the SAME node to mount. Provisioned by local-path (installed by master script).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sast-repos
+  namespace: sast
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ci-utils-artifacts
+  namespace: sast
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi

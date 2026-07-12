@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sonar-db
+  namespace: sast-system
+type: Opaque
+stringData:
+  # Overwritten by the master script with a generated password.
+  POSTGRES_PASSWORD: "changeme"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sonar-postgres
+  namespace: sast-system
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sonar-postgres
+  namespace: sast-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: sonar-postgres }
+  template:
+    metadata:
+      labels: { app: sonar-postgres }
+    spec:
+      nodeSelector:
+        sast.aotm/role: master
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: postgres
+          image: postgres:15
+          env:
+            - name: POSTGRES_USER
+              value: sonar
+            - name: POSTGRES_DB
+              value: sonarqube
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: sonar-db, key: POSTGRES_PASSWORD }
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits: { cpu: "500m", memory: "512Mi" }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: sonar-postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sonar-postgres
+  namespace: sast-system
+spec:
+  selector: { app: sonar-postgres }
+  ports:
+    - port: 5432
+      targetPort: 5432

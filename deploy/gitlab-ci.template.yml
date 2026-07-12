@@ -1,0 +1,60 @@
+# SAST pipeline job. Copied into the test project as .gitlab-ci.yml by
+# gitlab-local.sh. Runs on the AWS runner (tag: sast-aws), hands the repo to
+# ci-utils on the master, polls, and pulls the aggregated mega-artifact.
+#
+# Set these as CI/CD variables in the project (gitlab-local.sh seeds them):
+#   CI_UTILS_URL       e.g. http://<MASTER_PUBLIC_IP>:30084
+#   SONAR_PROJECT_KEY  e.g. vulnapp
+#   SONAR_TOKEN        (masked) token minted by master-node.sh
+stages: [sast]
+
+variables:
+  GIT_STRATEGY: none          # ci-utils clones the repo itself onto the PV
+
+sast:
+  stage: sast
+  tags: [sast-aws]
+  image: alpine:3.20
+  timeout: 30m
+  script:
+    - apk add --no-cache curl jq
+    - |
+      set -e
+      REPO_URL="http://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}:${CI_SERVER_PORT}/${CI_PROJECT_PATH}.git"
+      CI_CONTEXT=$(jq -n \
+        --arg CI_PROJECT_NAME "$CI_PROJECT_NAME" \
+        --arg CI_PROJECT_PATH "$CI_PROJECT_PATH" \
+        --arg CI_PROJECT_URL "$CI_PROJECT_URL" \
+        --arg CI_COMMIT_SHA "$CI_COMMIT_SHA" \
+        --arg CI_COMMIT_SHORT_SHA "$CI_COMMIT_SHORT_SHA" \
+        --arg CI_COMMIT_BRANCH "$CI_COMMIT_BRANCH" \
+        --arg CI_COMMIT_MESSAGE "$CI_COMMIT_MESSAGE" \
+        --arg CI_COMMIT_TIMESTAMP "$CI_COMMIT_TIMESTAMP" \
+        --arg CI_COMMIT_AUTHOR "$CI_COMMIT_AUTHOR" \
+        --arg CI_PIPELINE_ID "$CI_PIPELINE_ID" \
+        --arg CI_PIPELINE_URL "$CI_PIPELINE_URL" \
+        --arg CI_JOB_ID "$CI_JOB_ID" \
+        '$ARGS.named')
+      BODY=$(jq -n \
+        --arg repo_url "$REPO_URL" \
+        --arg commit_sha "$CI_COMMIT_SHA" \
+        --arg project_key "$SONAR_PROJECT_KEY" \
+        --arg sonar_token "$SONAR_TOKEN" \
+        --argjson ci_context "$CI_CONTEXT" \
+        '{repo_url:$repo_url,commit_sha:$commit_sha,project_key:$project_key,sonar_token:$sonar_token,ci_context:$ci_context}')
+      JOB_ID=$(curl -sf -X POST "$CI_UTILS_URL/job" -H 'Content-Type: application/json' -d "$BODY" | jq -r .job_id)
+      echo "ci-utils job_id=$JOB_ID"
+      [ -n "$JOB_ID" ] && [ "$JOB_ID" != null ] || { echo "failed to enqueue"; exit 1; }
+      STATUS=pending
+      for i in $(seq 1 180); do
+        STATUS=$(curl -sf "$CI_UTILS_URL/job/$JOB_ID/status" | jq -r .status)
+        echo "[$i] status=$STATUS"
+        case "$STATUS" in complete|partial|failed) break ;; esac
+        sleep 10
+      done
+      curl -sf "$CI_UTILS_URL/job/$JOB_ID/artifacts" -o mega-artifact.json
+      echo "===== summary ====="; jq '.summary' mega-artifact.json
+      [ "$STATUS" = failed ] && exit 1 || true
+  artifacts:
+    paths: [mega-artifact.json]
+    expire_in: 30 days

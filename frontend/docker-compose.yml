@@ -1,0 +1,47 @@
+# SAST Findings Explorer — master-node frontend stack.
+#
+#   frontend  React SPA, served on :3000 (internal only)
+#   nginx     reverse-proxies :80/:443 -> frontend:3000, serves /artifacts from
+#             the master-node backup PV, terminates TLS, answers ACME challenges
+#   certbot   obtains + auto-renews Let's Encrypt certs
+#
+# Copy .env.example -> .env and set DOMAIN / LETSENCRYPT_EMAIL / ARTIFACTS_DIR.
+# For TLS: run ./certbot/init-letsencrypt.sh once after `docker compose up -d`.
+
+services:
+  frontend:
+    build:
+      context: ./app
+    image: sast-frontend:local
+    restart: unless-stopped
+    expose:
+      - "3000"
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+      NGINX_ENVSUBST_FILTER: DOMAIN   # only substitute ${DOMAIN}, keep nginx $vars
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ${ARTIFACTS_DIR:-./artifacts}:/srv/artifacts:ro
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    # Renew every 12h; nginx picks up new certs on its own reload cadence.
+    entrypoint: >
+      /bin/sh -c 'trap exit TERM;
+      while :; do certbot renew --webroot -w /var/www/certbot --quiet;
+      sleep 12h & wait $${!}; done'

@@ -1,0 +1,55 @@
+# Redis: queue + job state for ci-utils. AOF on for crash durability (arch doc s9/s11).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sast-redis
+  namespace: sast
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sast-redis
+  namespace: sast
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: sast-redis }
+  template:
+    metadata:
+      labels: { app: sast-redis }
+    spec:
+      nodeSelector:
+        sast.aotm/role: worker
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["redis-server", "--appendonly", "yes"]
+          ports:
+            - containerPort: 6379
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits: { cpu: "250m", memory: "256Mi" }
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: sast-redis
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sast-redis
+  namespace: sast
+spec:
+  selector: { app: sast-redis }
+  ports:
+    - port: 6379
+      targetPort: 6379

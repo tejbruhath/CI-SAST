@@ -1,0 +1,11 @@
+# sast        -> worker-side: ci-utils, redis, scanner Jobs, shared PVCs (quota-bounded)
+# sast-system -> master-side: postgres, sonarqube (no quota; not on the scan budget)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sast
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sast-system

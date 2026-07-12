@@ -1,0 +1,89 @@
+# SonarQube Community, master node. Needs host sysctl vm.max_map_count=262144
+# (set by the master script) for Elasticsearch. Exposed on NodePort 30900.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sonarqube-data
+  namespace: sast-system
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sonarqube
+  namespace: sast-system
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: { app: sonarqube }
+  template:
+    metadata:
+      labels: { app: sonarqube }
+    spec:
+      nodeSelector:
+        sast.aotm/role: master
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      initContainers:
+        # sonarqube image refuses to run as non-root against a root-owned PV
+        - name: fix-perms
+          image: busybox:1.36
+          command: ["sh", "-c", "chown -R 1000:1000 /opt/sonarqube/data /opt/sonarqube/extensions"]
+          securityContext: { runAsUser: 0 }
+          volumeMounts:
+            - { name: data, mountPath: /opt/sonarqube/data }
+            - { name: ext, mountPath: /opt/sonarqube/extensions }
+      containers:
+        - name: sonarqube
+          image: sonarqube:9.9-community
+          env:
+            - name: SONAR_JDBC_URL
+              value: jdbc:postgresql://sonar-postgres:5432/sonarqube
+            - name: SONAR_JDBC_USERNAME
+              value: sonar
+            - name: SONAR_JDBC_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: sonar-db, key: POSTGRES_PASSWORD }
+            - name: SONAR_ES_BOOTSTRAP_CHECKS_DISABLE
+              value: "true"
+          ports:
+            - containerPort: 9000
+          resources:
+            requests: { cpu: "300m", memory: "1536Mi" }
+            limits: { cpu: "1500m", memory: "3Gi" }
+          readinessProbe:
+            httpGet: { path: /api/system/status, port: 9000 }
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 40
+          volumeMounts:
+            - { name: data, mountPath: /opt/sonarqube/data }
+            - { name: ext, mountPath: /opt/sonarqube/extensions }
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: sonarqube-data
+        - name: ext
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sonarqube
+  namespace: sast-system
+spec:
+  type: NodePort
+  selector: { app: sonarqube }
+  ports:
+    - port: 9000
+      targetPort: 9000
+      nodePort: 30900
