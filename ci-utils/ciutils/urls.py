@@ -1,5 +1,5 @@
 from django.urls import include, path
 
 urlpatterns = [
-    path("", include("orchestrator.urls")),
+    path("api/v1/", include("sentriq.urls")),
 ]

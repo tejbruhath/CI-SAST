@@ -1,0 +1,69 @@
+# Sentriq — full local stack (no k8s). Scanners run as their official
+# containers via the host docker daemon (worker mounts docker.sock).
+#
+# DinD volume note: `docker run -v SRC:DST` in the worker resolves SRC on the
+# HOST daemon. So the shared data dir is bind-mounted at the IDENTICAL absolute
+# path on host and inside the worker (${HOST_DATA_DIR}:${HOST_DATA_DIR}), and
+# SENTRIQ_DATA_DIR points there — making nested mounts resolve correctly.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./ci-utils
+    env_file: .env
+    environment:
+      SENTRIQ_DATA_DIR: ${HOST_DATA_DIR}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports:
+      - "8080:8080"
+    volumes:
+      - ${HOST_DATA_DIR}:${HOST_DATA_DIR}
+
+  worker:
+    build: ./ci-utils
+    command: celery -A ciutils worker --loglevel=info --concurrency=2
+    env_file: .env
+    environment:
+      SENTRIQ_DATA_DIR: ${HOST_DATA_DIR}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      backend: { condition: service_started }
+    volumes:
+      # docker socket: the worker runs scanner containers on the host daemon.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # shared data dir at an identical path (see header note).
+      - ${HOST_DATA_DIR}:${HOST_DATA_DIR}
+
+  frontend:
+    build: ./sentriq-frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  pgdata:

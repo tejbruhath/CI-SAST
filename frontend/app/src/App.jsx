@@ -6,15 +6,18 @@ import MetricCards from "./components/MetricCards.jsx";
 import TopBar from "./components/TopBar.jsx";
 import Columns from "./components/Columns.jsx";
 import DetailPanel from "./components/DetailPanel.jsx";
+import Dashboard from "./components/Dashboard.jsx";
+
+const POLL_MS = 120_000; // new artifacts land whenever a pipeline finishes; poll ci-utils for them
 
 export default function App() {
   const [state, setState] = useState({ status: "loading", repos: [], error: null });
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    let alive = true;
+  function refresh() {
+    setRefreshing(true);
     loadArtifacts()
       .then((res) => {
-        if (!alive) return;
         setState({
           status: res.count > 0 ? "ready" : "empty",
           repos: res.repos,
@@ -22,10 +25,18 @@ export default function App() {
         });
       })
       .catch((err) => {
-        if (!alive) return;
-        setState({ status: "error", repos: [], error: err.message });
-      });
-    return () => { alive = false; };
+        // a failed background poll shouldn't blank out a screen that's
+        // already showing good data -- only surface the error state on
+        // the very first load.
+        setState((s) => (s.status === "loading" ? { status: "error", repos: [], error: err.message } : s));
+      })
+      .finally(() => setRefreshing(false));
+  }
+
+  useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, POLL_MS);
+    return () => clearInterval(id);
   }, []);
 
   if (state.status === "loading") {
@@ -53,20 +64,26 @@ export default function App() {
   if (state.status === "empty") {
     return (
       <main className="app-shell">
-        <div className="viz-callout">
-          No scans have completed yet. Once a pipeline run finishes, its
-          findings will appear here automatically.
+        <div className="viz-callout space-y-2">
+          <div>
+            No scans have completed yet. Once a pipeline run finishes, its
+            findings will appear here automatically (checked every 2 min).
+          </div>
+          <button type="button" className="chip" onClick={refresh} disabled={refreshing}>
+            {refreshing ? "Refreshing…" : "Refresh now"}
+          </button>
         </div>
       </main>
     );
   }
 
-  return <Explorer repos={state.repos} />;
+  return <Explorer repos={state.repos} onRefresh={refresh} refreshing={refreshing} />;
 }
 
-function Explorer({ repos }) {
+function Explorer({ repos, onRefresh, refreshing }) {
   const { state, api, select, setSearch, setFilter, toggleResolved, closeDetail, reset } =
     useExplorer(repos);
+  const [dashboardOpen, setDashboardOpen] = useState(false);
 
   const lineOpen = !!state.line;
   const currentLevel = lineOpen ? "line" : api.currentLevel();
@@ -108,7 +125,21 @@ function Explorer({ repos }) {
   return (
     <main className="app-shell">
       <section className={`space-y-4 ${lineOpen ? "line-open" : ""}`}>
-        <MetricCards metrics={metrics} />
+        <MetricCards metrics={metrics} onOpenDashboard={() => setDashboardOpen(true)} />
+
+        {dashboardOpen && (
+          <Dashboard
+            repos={repos}
+            repo={api.repo()}
+            branch={api.branch()}
+            commit={api.commit()}
+            onSelectCommit={(commitId) => {
+              select("commit", { id: commitId });
+              setDashboardOpen(false);
+            }}
+            onClose={() => setDashboardOpen(false)}
+          />
+        )}
 
         <div className="frame">
           <TopBar
@@ -125,6 +156,8 @@ function Explorer({ repos }) {
             onToggleResolved={toggleResolved}
             showResolvedToggle={!!api.commit()}
             onReset={reset}
+            onRefresh={onRefresh}
+            refreshing={refreshing}
           />
 
           {syncNote && <div className="sync-note">{syncNote}</div>}
@@ -136,7 +169,14 @@ function Explorer({ repos }) {
               itemsFor={api.items}
               onSelect={select}
             />
-            {lineOpen && <DetailPanel finding={detailFinding} onClose={closeDetail} />}
+            {lineOpen && (
+              <DetailPanel
+                finding={detailFinding}
+                onClose={closeDetail}
+                repo={api.repo()}
+                commitSha={api.commit()?.sha}
+              />
+            )}
           </div>
         </div>
 

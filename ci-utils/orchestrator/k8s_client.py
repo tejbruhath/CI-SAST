@@ -185,10 +185,23 @@ def job_phase(job_id: str, tool: str) -> str:
 
 # ---- quota -------------------------------------------------------------------
 def read_quota() -> Tuple[Dict[str, float], Dict[str, float]]:
-    """Return (hard, used) in normalized units: cpu=millicores, memory=bytes.
-    Missing keys -> treated as unlimited (float('inf')) for hard, 0 for used."""
-    hard = {"cpu": float("inf"), "memory": float("inf")}
-    used = {"cpu": 0.0, "memory": 0.0}
+    """Return (hard, used) in normalized units: cpu=millicores, memory=bytes,
+    for BOTH requests.* and limits.* quota dimensions (keys: requests_cpu,
+    requests_memory, limits_cpu, limits_memory). Missing keys -> unlimited
+    (float('inf')) for hard, 0 for used.
+
+    Checking only requests.* here previously let the dispatcher happily
+    approve a dispatch that fit the requests quota but blew the SEPARATE
+    limits.cpu/limits.memory quota dimension -- k8s's own admission control
+    then rejected the pod forever (FailedCreate, retried indefinitely by the
+    job-controller), and since the Job never got a pod, ci-utils' own
+    job_phase() never saw it as failed either (Job.status.failed only
+    increments on an actual pod failure, not an admission rejection) -- so it
+    just sat "active" with zero progress, invisible to the retry/give-up path.
+    """
+    dims = ("requests.cpu", "requests.memory", "limits.cpu", "limits.memory")
+    hard = {d: float("inf") for d in dims}
+    used = {d: 0.0 for d in dims}
     try:
         q = core().read_namespaced_resource_quota(
             name=config.RESOURCE_QUOTA_NAME, namespace=config.NAMESPACE)
@@ -202,10 +215,9 @@ def read_quota() -> Tuple[Dict[str, float], Dict[str, float]]:
 
     h = (q.status.hard or {}) if q.status else {}
     u = (q.status.used or {}) if q.status else {}
-    if "requests.cpu" in h:
-        hard["cpu"] = cpu_to_millicores(h["requests.cpu"])
-    if "requests.memory" in h:
-        hard["memory"] = mem_to_bytes(h["requests.memory"])
-    used["cpu"] = cpu_to_millicores(u.get("requests.cpu", "0"))
-    used["memory"] = mem_to_bytes(u.get("requests.memory", "0"))
+    for d in dims:
+        conv = mem_to_bytes if d.endswith("memory") else cpu_to_millicores
+        if d in h:
+            hard[d] = conv(h[d])
+        used[d] = conv(u.get(d, "0"))
     return hard, used

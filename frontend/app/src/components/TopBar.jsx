@@ -4,7 +4,7 @@ export default function TopBar({
   crumb, title, placeholder, searchValue, onSearch,
   filters, activeFilter, onFilter,
   resolvedCount, resolvedActive, onToggleResolved, showResolvedToggle,
-  onReset,
+  onReset, onRefresh, refreshing,
 }) {
   return (
     <header className="top space-y-3 p-3">
@@ -15,6 +15,9 @@ export default function TopBar({
         </div>
         <div className="flex gap-2 items-center">
           <span className="viz-badge">Smart delete ON</span>
+          <button type="button" className="chip" onClick={onRefresh} disabled={refreshing}>
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
           <button type="button" className="chip" onClick={onReset}>Reset</button>
         </div>
       </div>

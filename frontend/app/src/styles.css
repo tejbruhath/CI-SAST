@@ -220,6 +220,63 @@ input:focus {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ---- metric cards as buttons ------------------------------------------------ */
+.metric-card-button { display: block; width: 100%; text-align: left; }
+.metric-card-button:hover { border-color: var(--viz-accent); background: var(--viz-chip-card); }
+
+/* ---- dashboard -------------------------------------------------------------- */
+.dashboard-overlay {
+  position: fixed; inset: 0; z-index: 40;
+  background: color-mix(in srgb, #000 55%, transparent);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.dashboard-panel {
+  width: 100%; max-width: 1040px; max-height: 88vh;
+  display: flex; flex-direction: column;
+  border: 1px solid var(--viz-border); border-radius: 16px;
+  background: var(--viz-panel); overflow: hidden;
+}
+.dashboard-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--viz-border); background: var(--viz-card);
+}
+.dashboard-body { padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.dashboard-grid-2 { display: grid; gap: 14px; grid-template-columns: 1fr; }
+@media (min-width: 720px) {
+  .dashboard-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.chart-card { border: 1px solid var(--viz-border); border-radius: 12px; padding: 14px; background: var(--viz-card); }
+
+.chart-wrap { position: relative; }
+.chart-svg { width: 100%; height: auto; display: block; cursor: pointer; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+.chart-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--viz-muted); }
+.chart-linekey { width: 12px; height: 2px; border-radius: 2px; display: inline-block; flex: none; }
+
+.chart-tooltip {
+  position: absolute; top: 8px; transform: translateX(-50%);
+  min-width: 160px; border: 1px solid var(--viz-border); border-radius: 10px;
+  background: var(--viz-chip-card); padding: 8px 10px; pointer-events: none;
+  box-shadow: 0 8px 20px color-mix(in srgb, #000 35%, transparent);
+}
+.chart-tooltip-row { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; margin-top: 2px; }
+.chart-tooltip-row .font-medium { margin-left: auto; }
+
+.bar-row { display: grid; grid-template-columns: 120px 1fr 40px; align-items: center; gap: 8px; }
+.bar-row-label { color: var(--viz-text); }
+.bar-row-track { height: 10px; border-radius: 5px; background: var(--viz-panel); overflow: hidden; }
+.bar-row-fill { height: 100%; border-radius: 5px; }
+.bar-row-value { text-align: right; }
+
+.chart-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.chart-table th, .chart-table td {
+  text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--viz-border);
+  font-variant-numeric: tabular-nums;
+}
+.chart-table th { color: var(--viz-muted); font-weight: 600; }
+
 @media (max-width: 680px) {
   .app-shell { padding: 10px; }
   .work { display: block; }

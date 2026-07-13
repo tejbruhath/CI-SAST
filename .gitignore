@@ -1,5 +1,10 @@
-aws/*.pem
+*.pem
 aws/instances.env
+prev_deploy/
+deploy/worker-join-command.txt
+deploy/frontend.compose.rendered.yml
+deploy/.sonar-admin-pass
+deploy/.sonar-token
 node_modules/
 dist/
 __pycache__/
@@ -8,3 +13,14 @@ frontend/certbot/conf/
 frontend/certbot/www/
 frontend/artifacts/*
 !frontend/artifacts/.gitkeep
+
+# Sentriq
+.env
+sentriq-frontend/dist/
+ci-utils/.venv/
+ci-utils/local.sqlite3
+data/
+
+# stray screenshots (not part of the project)
+Screenshot*.png
+*.png

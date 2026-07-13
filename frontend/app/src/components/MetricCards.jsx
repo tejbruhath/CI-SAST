@@ -7,14 +7,14 @@ const CARDS = [
   ["runs", "Runs"],
 ];
 
-export default function MetricCards({ metrics }) {
+export default function MetricCards({ metrics, onOpenDashboard }) {
   return (
     <div className="metrics-grid">
       {CARDS.map(([key, label]) => (
-        <div className="metric-card" key={key}>
+        <button type="button" className="metric-card metric-card-button" key={key} onClick={onOpenDashboard}>
           <div className="text-sm text-muted">{label}</div>
           <div className="viz-stat-value">{metrics[key] ?? 0}</div>
-        </div>
+        </button>
       ))}
     </div>
   );

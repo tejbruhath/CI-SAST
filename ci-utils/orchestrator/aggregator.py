@@ -150,7 +150,12 @@ def _gitleaks_findings(data: Any, job_id: str) -> List[Dict[str, Any]]:
         sev = "critical" if any(k in lower for k in _CRITICAL_SECRET_KEYWORDS) else "high"
         file = _rel(f.get("File", "unknown"), job_id)
         line = f.get("StartLine")
-        fp = f.get("Fingerprint") or f"{rule}:{file}:{line}"
+        # Rebuild from the repo-relative file, NOT gitleaks' own Fingerprint --
+        # gitleaks embeds the source path it was handed (/repos/{job_id}/...)
+        # into its Fingerprint, and job_id changes every scan, so trusting it
+        # yields a different fingerprint each run and smart-delete could never
+        # match/resolve the same secret across scans.
+        fp = f"{rule}:{file}:{line}"
         out.append({
             "id": fp,
             "rule_id": rule,

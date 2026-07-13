@@ -16,11 +16,11 @@ TOOL_RESOURCES = {
     },
     "trivy": {
         "requests": {"cpu": "250m", "memory": "512Mi"},
-        "limits": {"cpu": "1000m", "memory": "1024Mi"},
+        "limits": {"cpu": "500m", "memory": "768Mi"},
     },
     "sonarqube": {
         "requests": {"cpu": "500m", "memory": "768Mi"},
-        "limits": {"cpu": "1000m", "memory": "1536Mi"},
+        "limits": {"cpu": "750m", "memory": "1200Mi"},
     },
 }
 
@@ -52,9 +52,9 @@ SONAR_HOST = os.getenv("SONAR_HOST", "")
 
 # ---- Redis -------------------------------------------------------------------
 REDIS_URL = os.getenv("REDIS_URL", "redis://sast-redis:6379/0")
+CLONE_TIMEOUT_SECONDS = int(os.getenv("CLONE_TIMEOUT_SECONDS", "300"))
 
 # ---- Dispatcher --------------------------------------------------------------
 DISPATCHER_TICK_SECONDS = float(os.getenv("DISPATCHER_TICK_SECONDS", "2"))
-CLONE_TIMEOUT_SECONDS = int(os.getenv("CLONE_TIMEOUT_SECONDS", "300"))
 
 SCHEMA_VERSION = "3.0.0"

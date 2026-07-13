@@ -36,7 +36,7 @@ fi
 log "Installing base packages (docker.io, containerd, kubeadm/kubelet/kubectl, jq)"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y docker.io jq git curl gnupg apt-transport-https ca-certificates
+apt-get install -y docker.io docker-compose-v2 jq git curl gnupg apt-transport-https ca-certificates
 systemctl enable --now docker
 usermod -aG docker "${SUDO_USER:-root}" || true
 
@@ -112,26 +112,90 @@ kubectl apply -f "$REPO_ROOT/k8s/11-sonarqube.yaml"
 sed "s#tejbruhath/#${REGISTRY}/#g" "$REPO_ROOT/k8s/20-ci-utils.yaml" | kubectl apply -f -
 
 # ---- 5. wait for SonarQube + bootstrap ------------------------------------
-MASTER_IP="$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 || hostname -I | awk '{print $1}')"
-SONAR="http://localhost:30900"
-log "Waiting for SonarQube UP (3-5 min)…"
-st=DOWN
-for i in $(seq 1 60); do
-  st="$(curl -s "$SONAR/api/system/status" | jq -r '.status // "DOWN"' 2>/dev/null || echo DOWN)"
-  [ "$st" = "UP" ] && break; sleep 10
-done
-[ "$st" = "UP" ] || warn "SonarQube not UP yet — bootstrap below may need re-running"
+# IMDSv2 is token-required on modern EC2; a plain GET gets HTTP 401 and, without
+# -f, curl treats that as "success" and returns the error page as the body.
+IMDS_TOKEN="$(curl -sf -m 2 -X PUT http://169.254.169.254/latest/api/token \
+  -H 'X-aws-ec2-metadata-token-ttl-seconds: 21600' 2>/dev/null || true)"
+MASTER_IP="$(curl -sf -m 2 ${IMDS_TOKEN:+-H "X-aws-ec2-metadata-token: $IMDS_TOKEN"} \
+  http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)"
+[ -n "$MASTER_IP" ] || MASTER_IP="$(hostname -I | awk '{print $1}')"
 
-NEW_ADMIN_PASS="$(openssl rand -hex 12)"
-SONAR_PROJECT_KEY="vulnapp"; SONAR_TOKEN=""
-if [ "$st" = "UP" ]; then
-  log "Bootstrapping SonarQube (admin password, project, token)"
-  curl -s -u admin:admin -X POST \
-    "$SONAR/api/users/change_password?login=admin&previousPassword=admin&password=$NEW_ADMIN_PASS" >/dev/null || true
-  curl -s -u "admin:$NEW_ADMIN_PASS" -X POST \
-    "$SONAR/api/projects/create?name=$SONAR_PROJECT_KEY&project=$SONAR_PROJECT_KEY" >/dev/null || true
-  SONAR_TOKEN="$(curl -s -u "admin:$NEW_ADMIN_PASS" -X POST \
-    "$SONAR/api/user_tokens/generate?name=ci-$(date +%s)" | jq -r '.token // empty')"
+SONAR="http://localhost:30900"
+# Design: ONE shared SonarQube project ("vulnapp") for every repo scanned,
+# not one project per repo. This is safe because sonar-scanner polls its own
+# specific ceTaskId and fetches issues immediately on that task's SUCCESS --
+# SonarQube's Compute Engine processes analyses one at a time server-side
+# even when multiple scanner pods submit concurrently, so results never get
+# crossed between repos as long as each pod reads its own ceTaskId's result
+# right after that task completes (which entrypoint.py already does).
+SONAR_PROJECT_KEY="vulnapp"
+SONAR_PASS_FILE="$REPO_ROOT/deploy/.sonar-admin-pass"
+SONAR_TOKEN_FILE="$REPO_ROOT/deploy/.sonar-token"
+
+log "Waiting for SonarQube UP (cold start on small instances can take 10-15 min)…"
+st=DOWN
+for i in $(seq 1 90); do
+  if kubectl logs -n sast-system deploy/sonarqube --since=20m 2>/dev/null | grep -q "SonarQube is operational"; then
+    st=UP; break
+  fi
+  st="$(curl -s "$SONAR/api/system/status" | jq -r '.status // "DOWN"' 2>/dev/null || echo DOWN)"
+  [ "$st" = "UP" ] && break
+  sleep 10
+done
+
+SONAR_TOKEN=""
+if [ "$st" != "UP" ]; then
+  warn "SonarQube not UP yet -- skipping project/token bootstrap, set up manually and re-run"
+else
+  # Never trust a cached password blindly -- a PVC wipe or manual reset (like
+  # this one) invalidates it silently otherwise.
+  sonar_auth_ok() {
+    [ -n "$1" ] && curl -s -o /dev/null -w '%{http_code}' -u "admin:$1" \
+      "$SONAR/api/authentication/validate" | grep -q '^200$'
+  }
+
+  SONAR_ADMIN_PASS=""
+  if [ -f "$SONAR_PASS_FILE" ] && sonar_auth_ok "$(cat "$SONAR_PASS_FILE")"; then
+    SONAR_ADMIN_PASS="$(cat "$SONAR_PASS_FILE")"
+    log "Reusing cached SonarQube admin password (validated live)"
+  elif sonar_auth_ok admin; then
+    NEW_PASS="$(openssl rand -hex 12)"
+    # This endpoint has been observed to 401 Basic Auth on some SonarQube
+    # patch builds even with valid admin:admin creds (CSRF/session quirk) --
+    # no -f here, and don't let a failed rotation take the whole script down
+    # (it did, silently, before this guard existed): fall back to the
+    # still-valid "admin" password instead of crashing.
+    ROTATE_STATUS="$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin -X POST \
+      "$SONAR/api/users/change_password?login=admin&previousPassword=admin&password=$NEW_PASS")"
+    if [ "$ROTATE_STATUS" = "200" ] || [ "$ROTATE_STATUS" = "204" ]; then
+      SONAR_ADMIN_PASS="$NEW_PASS"
+      log "Rotated default admin password"
+    else
+      SONAR_ADMIN_PASS="admin"
+      warn "SonarQube rejected the password-rotation request (HTTP $ROTATE_STATUS) -- leaving it as admin/admin, rotate manually if desired"
+    fi
+    echo "$SONAR_ADMIN_PASS" > "$SONAR_PASS_FILE"; chmod 600 "$SONAR_PASS_FILE"
+  else
+    read -rsp "SonarQube admin password was already changed manually -- enter it once so I can bootstrap the project/token: " SONAR_ADMIN_PASS
+    echo
+    echo "$SONAR_ADMIN_PASS" > "$SONAR_PASS_FILE"; chmod 600 "$SONAR_PASS_FILE"
+  fi
+
+  if [ -f "$SONAR_TOKEN_FILE" ]; then
+    SONAR_TOKEN="$(cat "$SONAR_TOKEN_FILE")"
+    log "Reusing cached SonarQube project token"
+  elif [ -n "$SONAR_ADMIN_PASS" ]; then
+    curl -s -u "admin:$SONAR_ADMIN_PASS" -X POST \
+      "$SONAR/api/projects/create?name=$SONAR_PROJECT_KEY&project=$SONAR_PROJECT_KEY" >/dev/null || true
+    SONAR_TOKEN="$(curl -s -u "admin:$SONAR_ADMIN_PASS" -X POST \
+      "$SONAR/api/user_tokens/generate?name=ci-bootstrap" | jq -r '.token // empty')"
+    if [ -n "$SONAR_TOKEN" ]; then
+      echo "$SONAR_TOKEN" > "$SONAR_TOKEN_FILE"; chmod 600 "$SONAR_TOKEN_FILE"
+      log "Created SonarQube project '$SONAR_PROJECT_KEY' + token"
+    else
+      warn "Project/token creation failed -- check admin password, create manually if needed"
+    fi
+  fi
 fi
 
 # ---- 6. frontend (HTTP-only, pulls $REGISTRY/sast-frontend) ---------------
@@ -142,15 +206,25 @@ docker compose -f "$REPO_ROOT/deploy/frontend.compose.rendered.yml" up -d 2>/dev
   || docker-compose -f "$REPO_ROOT/deploy/frontend.compose.rendered.yml" up -d
 
 # ---- 7. GitLab runner (optional) ------------------------------------------
+# Idempotency guard: re-running this script used to call `gitlab-runner
+# register` unconditionally every time, piling up duplicate runner entries in
+# config.toml on every re-run (all sharing the sast-aws tag, so GitLab would
+# round-robin jobs across old and new registrations alike). Skip if a runner
+# for this URL is already registered; unregister manually first if you want
+# to force a clean re-registration.
 if [ -n "$GITLAB_URL" ]; then
-  log "Installing + registering GitLab runner (docker executor, tag sast-aws)"
-  curl -L "https://packages.gitlab.com/install/repositories/runner/gitlab-runner/script.deb.sh" | bash
-  apt-get install -y gitlab-runner
-  gitlab-runner register --non-interactive --url "$GITLAB_URL" \
-    --registration-token "$GITLAB_REG_TOKEN" --executor docker \
-    --docker-image "alpine:3.20" --description "sast-aws-runner" \
-    --tag-list "sast-aws" --run-untagged="false" --locked="false" \
-    || warn "runner registration failed (check URL/token/reachability)"
+  if [ -f /etc/gitlab-runner/config.toml ] && grep -q "url = \"$GITLAB_URL\"" /etc/gitlab-runner/config.toml; then
+    warn "a runner for $GITLAB_URL is already registered -- skipping (gitlab-runner list / unregister first to redo)"
+  else
+    log "Installing + registering GitLab runner (docker executor, tag sast-aws)"
+    curl -L "https://packages.gitlab.com/install/repositories/runner/gitlab-runner/script.deb.sh" | bash
+    apt-get install -y gitlab-runner
+    gitlab-runner register --non-interactive --url "$GITLAB_URL" \
+      --registration-token "$GITLAB_REG_TOKEN" --executor docker \
+      --docker-image "alpine:3.20" --description "sast-aws-runner" \
+      --tag-list "sast-aws" --run-untagged="false" --locked="false" \
+      || warn "runner registration failed (check URL/token/reachability)"
+  fi
 fi
 
 # ---- 8. worker join + summary ---------------------------------------------
@@ -162,9 +236,12 @@ cat <<EOF
   MASTER READY
 ════════════════════════════════════════════════════════════════════
   Frontend    : http://$MASTER_IP/
-  SonarQube   : http://$MASTER_IP:30900/   (admin / $NEW_ADMIN_PASS)
+  SonarQube   : http://$MASTER_IP:30900/
   ci-utils    : http://$MASTER_IP:30084/health
-  Sonar project: $SONAR_PROJECT_KEY   token: ${SONAR_TOKEN:-<bootstrap-manually>}
+
+  Sonar project: $SONAR_PROJECT_KEY   token: ${SONAR_TOKEN:-<not bootstrapped -- see warning above, set up manually>}
+  Put these into GitLab CI/CD variables as SONAR_PROJECT_KEY / SONAR_TOKEN,
+  alongside CI_UTILS_URL.
 
   WORKER JOIN (also saved to deploy/worker-join-command.txt):
   $JOIN_CMD

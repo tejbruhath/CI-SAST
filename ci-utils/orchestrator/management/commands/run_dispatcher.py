@@ -170,14 +170,22 @@ def dispatch_pass() -> None:
     # Compute usage authoritatively from our own running set rather than trusting
     # the quota controller's eventually-consistent status.used (which lags a
     # freshly-created Job by ~1s). Use the larger of the two to stay safe.
-    cpu_running = mem_running = 0.0
+    # Both requests.* AND limits.* dimensions are tracked -- checking only
+    # requests previously let this approve a dispatch that fit the requests
+    # quota but blew the separate limits.cpu/limits.memory quota, which k8s's
+    # admission control then rejected forever (see k8s_client.read_quota()).
+    rcpu_running = rmem_running = lcpu_running = lmem_running = 0.0
     for jid in store.all_job_ids():
         for t in store.tools_running(jid):
-            req = config.TOOL_RESOURCES[t]["requests"]
-            cpu_running += k8s.cpu_to_millicores(req["cpu"])
-            mem_running += k8s.mem_to_bytes(req["memory"])
-    cpu_used = max(used_reported["cpu"], cpu_running)
-    mem_used = max(used_reported["memory"], mem_running)
+            res = config.TOOL_RESOURCES[t]
+            rcpu_running += k8s.cpu_to_millicores(res["requests"]["cpu"])
+            rmem_running += k8s.mem_to_bytes(res["requests"]["memory"])
+            lcpu_running += k8s.cpu_to_millicores(res["limits"]["cpu"])
+            lmem_running += k8s.mem_to_bytes(res["limits"]["memory"])
+    rcpu_used = max(used_reported["requests.cpu"], rcpu_running)
+    rmem_used = max(used_reported["requests.memory"], rmem_running)
+    lcpu_used = max(used_reported["limits.cpu"], lcpu_running)
+    lmem_used = max(used_reported["limits.memory"], lmem_running)
 
     progress = True
     while progress:
@@ -190,18 +198,21 @@ def dispatch_pass() -> None:
             tool = next((t for t in config.TOOLS if t in pend), None)
             if tool is None:
                 continue
-            req = config.TOOL_RESOURCES[tool]["requests"]
-            rc = k8s.cpu_to_millicores(req["cpu"])
-            rm = k8s.mem_to_bytes(req["memory"])
-            if cpu_used + rc > hard["cpu"] or mem_used + rm > hard["memory"]:
+            res = config.TOOL_RESOURCES[tool]
+            rc = k8s.cpu_to_millicores(res["requests"]["cpu"])
+            rm = k8s.mem_to_bytes(res["requests"]["memory"])
+            lc = k8s.cpu_to_millicores(res["limits"]["cpu"])
+            lm = k8s.mem_to_bytes(res["limits"]["memory"])
+            if (rcpu_used + rc > hard["requests.cpu"] or rmem_used + rm > hard["requests.memory"]
+                    or lcpu_used + lc > hard["limits.cpu"] or lmem_used + lm > hard["limits.memory"]):
                 # this job's next tool isn't capacity-available; let newer jobs try
                 continue
             job = store.get_job(job_id)
             if not ensure_cloned(job_id, job):
                 continue
             dispatch(job_id, tool, job)
-            cpu_used += rc
-            mem_used += rm
+            rcpu_used += rc; rmem_used += rm
+            lcpu_used += lc; lmem_used += lm
             progress = True
             break   # re-evaluate from the oldest job after every dispatch
 

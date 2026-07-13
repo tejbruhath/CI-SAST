@@ -1,40 +1,85 @@
-# SAST pipeline job. Copied into the test project as .gitlab-ci.yml by
-# gitlab-local.sh. Runs on the AWS runner (tag: sast-aws), hands the repo to
-# ci-utils on the master, polls, and pulls the aggregated mega-artifact.
+# SAST pipeline job. Copy into the project as .gitlab-ci.yml.
+# Hands the repo to ci-utils on the master, polls, pulls the aggregated
+# mega.json. Full ci_context field list, 60m timeout, mega.json filename,
+# and 90-day artifact retention below are carried over from a previously
+# field-tested pipeline (prev_deploy/) — not arbitrary choices, don't shrink
+# them back without reason.
 #
-# Set these as CI/CD variables in the project (gitlab-local.sh seeds them):
-#   CI_UTILS_URL       e.g. http://<MASTER_PUBLIC_IP>:30084
-#   SONAR_PROJECT_KEY  e.g. vulnapp
-#   SONAR_TOKEN        (masked) token minted by master-node.sh
+# Values below are hardcoded per user's request (matches the prev_deploy/
+# convention of baking real values directly into the yaml instead of using
+# GitLab CI/CD project variables). This means the SONAR_TOKEN sits in
+# plaintext in this repo's git history from the first commit that includes
+# it -- deliberate tradeoff, same one prev_deploy/gitlab-ci (1).yml made.
+#
+# Clone auth: defaults to GitLab's CI_JOB_TOKEN, which works out of the box
+# on gitlab.com and on any self-hosted instance ci-utils can reach directly.
+# If ci-utils' pod can't reach the GitLab server over the job-token path
+# (happened previously with an on-prem GitLab on a separate network segment
+# from the k8s cluster — CI_JOB_TOKEN clone silently failed to resolve/auth
+# from that network), fall back to a dedicated bot user + password instead:
+# set GITLAB_CLONE_USER / GITLAB_CLONE_PASS and uncomment the CLONE_URL
+# block below in place of the CI_JOB_TOKEN line.
 stages: [sast]
 
 variables:
   GIT_STRATEGY: none          # ci-utils clones the repo itself onto the PV
+  CI_UTILS_URL: "http://3.238.100.212:30084"
+  SONAR_PROJECT_KEY: "vulnapp"
+  SONAR_TOKEN: "$SONAR_TOKEN"   # set as a masked GitLab CI/CD variable (redacted from source)
 
 sast:
   stage: sast
   tags: [sast-aws]
   image: alpine:3.20
-  timeout: 30m
+  timeout: 60m
   script:
-    - apk add --no-cache curl jq
+    - apk add --no-cache curl jq python3
     - |
       set -e
-      REPO_URL="http://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}:${CI_SERVER_PORT}/${CI_PROJECT_PATH}.git"
+      # CI_SERVER_PROTOCOL is https on gitlab.com (and any TLS-terminated
+      # instance) -- hardcoding http:// here broke cloning against gitlab.com
+      # (plain HTTP to its :443 fails immediately, which is exactly what
+      # produced a near-instant ci-utils clone failure with all 3 tools still
+      # "pending").
+      REPO_URL="${CI_SERVER_PROTOCOL}://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+
+      # --- fallback clone auth (see header) -- uncomment if job-token clone
+      # can't reach the GitLab server from ci-utils' network, and set
+      # GITLAB_CLONE_USER / GITLAB_CLONE_PASS / GITLAB_SERVER_URL as variables:
+      # ENCODED_PASS=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "${GITLAB_CLONE_PASS}")
+      # REPO_URL="${GITLAB_SERVER_URL/https:\/\//https://${GITLAB_CLONE_USER}:${ENCODED_PASS}@}/${CI_PROJECT_PATH}.git"
+
       CI_CONTEXT=$(jq -n \
+        --arg CI_PIPELINE_ID "$CI_PIPELINE_ID" \
+        --arg CI_PIPELINE_URL "$CI_PIPELINE_URL" \
+        --arg CI_PIPELINE_SOURCE "$CI_PIPELINE_SOURCE" \
+        --arg CI_PIPELINE_CREATED_AT "$CI_PIPELINE_CREATED_AT" \
+        --arg CI_PIPELINE_IID "$CI_PIPELINE_IID" \
         --arg CI_PROJECT_NAME "$CI_PROJECT_NAME" \
         --arg CI_PROJECT_PATH "$CI_PROJECT_PATH" \
         --arg CI_PROJECT_URL "$CI_PROJECT_URL" \
+        --arg CI_PROJECT_ID "$CI_PROJECT_ID" \
+        --arg CI_PROJECT_VISIBILITY "$CI_PROJECT_VISIBILITY" \
         --arg CI_COMMIT_SHA "$CI_COMMIT_SHA" \
         --arg CI_COMMIT_SHORT_SHA "$CI_COMMIT_SHORT_SHA" \
         --arg CI_COMMIT_BRANCH "$CI_COMMIT_BRANCH" \
         --arg CI_COMMIT_MESSAGE "$CI_COMMIT_MESSAGE" \
-        --arg CI_COMMIT_TIMESTAMP "$CI_COMMIT_TIMESTAMP" \
         --arg CI_COMMIT_AUTHOR "$CI_COMMIT_AUTHOR" \
-        --arg CI_PIPELINE_ID "$CI_PIPELINE_ID" \
-        --arg CI_PIPELINE_URL "$CI_PIPELINE_URL" \
+        --arg CI_COMMIT_TIMESTAMP "$CI_COMMIT_TIMESTAMP" \
+        --arg CI_RUNNER_ID "$CI_RUNNER_ID" \
+        --arg CI_RUNNER_DESCRIPTION "$CI_RUNNER_DESCRIPTION" \
+        --arg CI_RUNNER_TAGS "$CI_RUNNER_TAGS" \
+        --arg CI_RUNNER_VERSION "$CI_RUNNER_VERSION" \
         --arg CI_JOB_ID "$CI_JOB_ID" \
+        --arg CI_JOB_NAME "$CI_JOB_NAME" \
+        --arg CI_JOB_STAGE "$CI_JOB_STAGE" \
+        --arg CI_JOB_URL "$CI_JOB_URL" \
+        --arg GITLAB_USER_LOGIN "$GITLAB_USER_LOGIN" \
+        --arg GITLAB_USER_EMAIL "$GITLAB_USER_EMAIL" \
+        --arg GITLAB_USER_NAME "$GITLAB_USER_NAME" \
+        --arg CI_SERVER_VERSION "$CI_SERVER_VERSION" \
         '$ARGS.named')
+
       BODY=$(jq -n \
         --arg repo_url "$REPO_URL" \
         --arg commit_sha "$CI_COMMIT_SHA" \
@@ -42,19 +87,32 @@ sast:
         --arg sonar_token "$SONAR_TOKEN" \
         --argjson ci_context "$CI_CONTEXT" \
         '{repo_url:$repo_url,commit_sha:$commit_sha,project_key:$project_key,sonar_token:$sonar_token,ci_context:$ci_context}')
-      JOB_ID=$(curl -sf -X POST "$CI_UTILS_URL/job" -H 'Content-Type: application/json' -d "$BODY" | jq -r .job_id)
-      echo "ci-utils job_id=$JOB_ID"
-      [ -n "$JOB_ID" ] && [ "$JOB_ID" != null ] || { echo "failed to enqueue"; exit 1; }
+
+      JOB_RESPONSE=$(curl -sf -X POST "$CI_UTILS_URL/job" -H 'Content-Type: application/json' -d "$BODY")
+      echo "Job response: ${JOB_RESPONSE}"
+      JOB_ID=$(echo "$JOB_RESPONSE" | jq -r '.job_id // empty')
+      [ -n "$JOB_ID" ] && [ "$JOB_ID" != null ] || { echo "Failed to create job: ${JOB_RESPONSE}"; exit 1; }
+      echo "Job created: ${JOB_ID}"
+
+      MAX_POLLS=120
+      POLL_INTERVAL=15
       STATUS=pending
-      for i in $(seq 1 180); do
-        STATUS=$(curl -sf "$CI_UTILS_URL/job/$JOB_ID/status" | jq -r .status)
-        echo "[$i] status=$STATUS"
+      for i in $(seq 1 $MAX_POLLS); do
+        STATUS_RESPONSE=$(curl -sf "$CI_UTILS_URL/job/$JOB_ID/status")
+        STATUS=$(echo "$STATUS_RESPONSE" | jq -r '.status // "unknown"')
+        PENDING=$(echo "$STATUS_RESPONSE" | jq -r '.tools_pending | join(", ") // "none"')
+        echo "[$i] status=$STATUS pending=$PENDING"
         case "$STATUS" in complete|partial|failed) break ;; esac
-        sleep 10
+        sleep $POLL_INTERVAL
       done
-      curl -sf "$CI_UTILS_URL/job/$JOB_ID/artifacts" -o mega-artifact.json
-      echo "===== summary ====="; jq '.summary' mega-artifact.json
-      [ "$STATUS" = failed ] && exit 1 || true
+      [ "$STATUS" = failed ] && { echo "Job failed."; exit 1; }
+      [ "$STATUS" = complete ] || [ "$STATUS" = partial ] || { echo "Job timed out after $((MAX_POLLS * POLL_INTERVAL))s"; exit 1; }
+
+      curl -sf "$CI_UTILS_URL/job/$JOB_ID/artifacts" | jq '.' > mega.json
+      echo "Total findings: $(jq -r '.summary.total_findings // 0' mega.json)"
+      echo "  Gitleaks: $(jq -r '.summary.by_tool.gitleaks // 0' mega.json)"
+      echo "  Trivy:    $(jq -r '.summary.by_tool.trivy // 0' mega.json)"
+      echo "  Sonar:    $(jq -r '.summary.by_tool.sonarqube // 0' mega.json)"
   artifacts:
-    paths: [mega-artifact.json]
-    expire_in: 30 days
+    paths: [mega.json]
+    expire_in: 90 days

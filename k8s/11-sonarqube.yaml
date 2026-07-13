@@ -64,7 +64,7 @@ spec:
             httpGet: { path: /api/system/status, port: 9000 }
             initialDelaySeconds: 60
             periodSeconds: 15
-            failureThreshold: 40
+            failureThreshold: 64  # ~16min, matches master-node.sh's own wait budget
           volumeMounts:
             - { name: data, mountPath: /opt/sonarqube/data }
             - { name: ext, mountPath: /opt/sonarqube/extensions }

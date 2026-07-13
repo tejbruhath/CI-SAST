@@ -2,6 +2,27 @@
 # Sized for the t2.medium worker (2 vCPU / ~4Gi): leaves headroom for kubelet
 # + system, and covers ci-utils(2x256Mi) + redis(128Mi) + concurrent scanners.
 # Tune up on a bigger worker to raise scan concurrency.
+#
+# limits.cpu/limits.memory sized to fit ci-utils(1000m/1024Mi) + redis
+# (250m/256Mi) + all 3 scanner tools running concurrently for one job
+# (gitleaks 500m/512Mi + trivy 500m/768Mi + sonarqube 750m/1200Mi = 3000m/
+# 3760Mi peak) -- a prior sizing (limits.cpu:"2") was too tight even for
+# ci-utils+redis alone (1250m baseline), so trivy/sonar-scanner Jobs got
+# admission-rejected forever (`exceeded quota` FailedCreate events, retried
+# indefinitely by the job-controller, never surfaced as failed to ci-utils
+# since a Job that never got a pod doesn't hit Job.status.failed). CPU
+# limits are a throttle, not a reservation, so going above the node's
+# physical 2 vCPU is safe/normal; memory limits are NOT safely
+# overcommittable, so 3900Mi intentionally still leaves ~150-200Mi under the
+# node's real ~4Gi for kubelet/containerd/OS.
+#
+# `pods` is a second, independent cap alongside cpu/memory -- field-tested
+# design (prev_deploy/): no tool pod ever sits idle (one-shot Jobs only), so
+# this bounds max concurrent scanner Jobs directly regardless of how the
+# cpu/memory numbers above are tuned. Bump live with:
+#   kubectl describe resourcequota sast-quota -n sast
+#   kubectl patch resourcequota sast-quota -n sast --type='json' \
+#     -p='[{"op":"replace","path":"/spec/hard/pods","value":"35"}]'
 apiVersion: v1
 kind: ResourceQuota
 metadata:
@@ -11,5 +32,6 @@ spec:
   hard:
     requests.cpu: "1500m"
     requests.memory: "3Gi"
-    limits.cpu: "2"
-    limits.memory: "3500Mi"
+    limits.cpu: "3500m"
+    limits.memory: "3900Mi"
+    pods: "25"

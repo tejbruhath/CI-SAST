@@ -1,5 +1,6 @@
 import React from "react";
 import { SEV_COLOR } from "../data/util.js";
+import { newIssueUrl, authorUrl, webIdeUrl } from "../data/gitlab.js";
 
 function Field({ label, value }) {
   if (value == null || value === "") return null;
@@ -19,10 +20,14 @@ function recommendation(f) {
   return "Fix the flagged code path, add a regression test, and verify it clears on the next scan.";
 }
 
-export default function DetailPanel({ finding, onClose }) {
+export default function DetailPanel({ finding, onClose, repo, commitSha }) {
   if (!finding) return null;
   const f = finding;
   const manifest = f.line == null;
+
+  const assignHref = repo ? authorUrl(repo, f.introducedBy) : null;
+  const issueHref = repo ? newIssueUrl(repo, f, commitSha) : null;
+  const ideHref = repo ? webIdeUrl(repo, commitSha, f.file) : null;
 
   return (
     <aside className="detail" aria-live="polite">
@@ -72,9 +77,21 @@ export default function DetailPanel({ finding, onClose }) {
                 View in source tool ↗
               </a>
             )}
-            <button type="button" className="chip">Assign</button>
-            <button type="button" className="chip">Create issue</button>
-            <button type="button" className="chip">Accept risk</button>
+            {assignHref && (
+              <a className="chip" href={assignHref} target="_blank" rel="noreferrer">
+                Assign ↗
+              </a>
+            )}
+            {issueHref && (
+              <a className="chip" href={issueHref} target="_blank" rel="noreferrer">
+                Create issue ↗
+              </a>
+            )}
+            {ideHref && (
+              <a className="chip" href={ideHref} target="_blank" rel="noreferrer">
+                Open Web IDE ↗
+              </a>
+            )}
           </div>
         </section>
 
