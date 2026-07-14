@@ -5,14 +5,33 @@ const TOOLS = ["gitleaks", "semgrep", "trivy", "zap", "nuclei"];
 const VERDICTS = ["real", "false_positive", "noise", "pending"];
 
 // Renders the AI-fix remediation lifecycle for one finding.
-// No fix generated → "—". Fix ready → START (triggers PR). creating → QUEUED.
-// open → DONE (links to PR). failed → RETRY. proposed/denied → review states.
-function FixCell({ fix, onStart, busy }) {
+// No fix generated → "FIX WITH AI". Fix ready → text. creating → QUEUED.
+// open → DONE (links to PR). failed → RETRY.
+function FixCell({ id, fix, onFixWithAi, fixingIds, busy }) {
   const stop = (e) => e.stopPropagation();
-  const btn = (label, cls) => ({ label, cls });
+  const disabled = busy || fixingIds?.has(id);
 
-  if (!fix) return <span className="text-outline">—</span>;
-  const { status, pr_status, pr_url } = fix;
+  if (fixingIds?.has(id)) {
+    return <span className="text-tertiary font-bold animate-pulse">FIXING…</span>;
+  }
+
+  const action = (label, cls, onClick) => (
+    <button type="button" disabled={disabled}
+      onClick={onClick}
+      className={`px-2 py-1 border font-code-label text-code-label uppercase font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${cls}`}>
+      {label}
+    </button>
+  );
+
+  if (!fix) {
+    return action(
+      "FIX WITH AI",
+      "border-primary text-primary hover:bg-primary hover:text-black",
+      (e) => { stop(e); onFixWithAi?.(id); }
+    );
+  }
+
+  const { pr_status, pr_url } = fix;
 
   if (pr_status === "open") {
     return pr_url ? (
@@ -20,29 +39,23 @@ function FixCell({ fix, onStart, busy }) {
          className="text-primary font-bold hover:underline">DONE ↗</a>
     ) : <span className="text-primary font-bold">DONE</span>;
   }
+
   if (pr_status === "creating") {
     return <span className="text-tertiary font-bold animate-pulse">QUEUED…</span>;
   }
 
-  const action = (label, cls) => (
-    <button type="button" disabled={busy}
-      onClick={(e) => { stop(e); onStart(); }}
-      className={`px-2 py-1 border font-code-label text-code-label uppercase font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${cls}`}>
-      {label}
-    </button>
-  );
-
   if (pr_status === "failed") {
-    return action("RETRY", "border-error text-error hover:bg-error hover:text-black");
+    return action(
+      "RETRY",
+      "border-error text-error hover:bg-error hover:text-black",
+      (e) => { stop(e); onFixWithAi?.(id); }
+    );
   }
-  if (status === "approved" || status === "edited") {
-    return action("START", "border-primary text-primary hover:bg-primary hover:text-black");
-  }
-  if (status === "denied") return <span className="text-outline">DENIED</span>;
-  return <span className="text-tertiary" title="Approve the fix in the detail panel first">NEEDS APPROVAL</span>;
+
+  return <span className="text-primary font-bold">FIX READY</span>;
 }
 
-export default function FindingsTable({ findings, filters, setFilters, onPick, selected, onCreatePr, busy }) {
+export default function FindingsTable({ findings, filters, setFilters, onPick, selected, onFixWithAi, fixingIds, busy }) {
   const set = (k) => (e) => setFilters({ ...filters, [k]: e.target.value });
 
   return (
@@ -102,45 +115,34 @@ export default function FindingsTable({ findings, filters, setFilters, onPick, s
                 </td>
               </tr>
             ) : (
-              findings.map((f) => {
-                const status = f.hitl_actions?.[0]?.action || (f.triage?.verdict === "noise" ? "dismissed" : "unresolved");
-                const statusLabel = status === "approve" ? "approved" : status === "deny" ? "denied" : status === "edit" ? "edited" : status;
-                const statusColor =
-                  status === "approve"
-                    ? "text-primary"
-                    : status === "deny" || status === "dismissed"
-                    ? "text-outline"
-                    : f.severity === "critical"
-                    ? "text-error"
-                    : "text-tertiary";
-
-                return (
-                  <tr
-                    key={f.id}
-                    className={`border-b border-outline hover:bg-surface-container-highest transition-colors cursor-pointer ${
-                      selected === f.id ? "bg-surface-container-high" : ""
-                    }`}
-                    onClick={() => onPick(f.id)}
-                  >
-                    <td className="p-3 border-r-2 border-outline font-code-label">
-                      <ToolBadge tool={f.tool} />
-                    </td>
-                    <td className="p-3 border-r-2 border-outline">
-                      <SeverityBadge severity={f.severity} blink={f.severity === "critical" && statusLabel === "unresolved"} />
-                    </td>
-                    <td className="p-3 border-r-2 border-outline text-on-surface-variant">
-                      <div className="line-clamp-2" title={f.message}>{f.message}</div>
-                    </td>
-                    <td className="p-3 border-r-2 border-outline font-code-label text-outline break-words">
-                      {f.file ? (f.line ? `${f.file}:${f.line}` : f.file) : "—"}
-                    </td>
-                    <td className={`p-3 border-r-2 border-outline font-bold font-code-label text-xs uppercase ${statusColor}`}>{statusLabel}</td>
-                    <td className="p-3 font-code-label text-xs">
-                      <FixCell fix={f.fix} busy={busy} onStart={() => onCreatePr?.(f.id)} />
-                    </td>
-                  </tr>
-                );
-              })
+              findings.map((f) => (
+                <tr
+                  key={f.id}
+                  className={`border-b border-outline hover:bg-surface-container-highest transition-colors cursor-pointer ${
+                    selected === f.id ? "bg-surface-container-high" : ""
+                  }`}
+                  onClick={() => onPick(f.id)}
+                >
+                  <td className="p-3 border-r-2 border-outline font-code-label">
+                    <ToolBadge tool={f.tool} />
+                  </td>
+                  <td className="p-3 border-r-2 border-outline">
+                    <SeverityBadge severity={f.severity} blink={f.severity === "critical" && (f.verdict === "real" || f.verdict == null)} />
+                  </td>
+                  <td className="p-3 border-r-2 border-outline text-on-surface-variant">
+                    <div className="line-clamp-2" title={f.message}>{f.message}</div>
+                  </td>
+                  <td className="p-3 border-r-2 border-outline font-code-label text-outline break-words">
+                    {f.file ? (f.line ? `${f.file}:${f.line}` : f.file) : "—"}
+                  </td>
+                  <td className="p-3 border-r-2 border-outline">
+                    <VerdictBadge verdict={f.verdict} severity={f.severity} />
+                  </td>
+                  <td className="p-3 font-code-label text-xs">
+                    <FixCell id={f.id} fix={f.fix} onFixWithAi={onFixWithAi} fixingIds={fixingIds} busy={busy} />
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
