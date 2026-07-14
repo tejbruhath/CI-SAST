@@ -174,7 +174,53 @@ for scan progress and triage/fix landing, but it forces the backend to ASGI: a
 sync gunicorn worker is pinned for the life of every open stream. Not worth it
 until there are enough concurrent users for polling to actually hurt.
 
-### 20. No real pagination on findings
-DRF `PAGE_SIZE=100` with `LimitOffsetPagination`, but the frontend requests the
-default page and renders whatever it gets. A scan with >100 findings silently
-shows only the first 100.
+### 20. There is no pagination at all — just a silent hard slice
+`REST_FRAMEWORK` configures `LimitOffsetPagination` with `PAGE_SIZE=100`, which
+reads like pagination exists. **It does not.** Those settings only apply to
+generic/ViewSet views, and every view here is a plain `@api_view` function, so
+the setting is inert. What actually limits the response is a hardcoded slice:
+
+```python
+return Response(FindingListSerializer(qs[:500], many=True).data)   # findings
+return Response(ScanSerializer(qs[:100], many=True).data)          # scans
+return Response(ProvenanceSerializer(qs[:500], many=True).data)    # provenance
+```
+
+Past those limits, rows are dropped with no `next` link, no count, and no signal
+to the client. A repo with >500 findings silently shows 500. Not urgent (a scan
+currently yields ~47), but it is a silent-truncation bug, and the misleading
+settings make it look solved.
+
+**Fix:** either wire real pagination (DRF's `paginate_queryset` in the function
+views) or drop the inert `PAGE_SIZE`/`DEFAULT_PAGINATION_CLASS` settings so the
+config stops lying.
+
+### 21. The verdict filter's "pending" option matches nothing
+`FindingsTable` offers `VERDICTS = [..., "pending"]` in the filter dropdown, and
+the view does:
+
+```python
+if verdict:
+    qs = qs.filter(triage__verdict=verdict)
+```
+
+No `Triage` row is ever written with verdict `pending` — the model's default is
+never used because `_triage_and_fix` always supplies a real verdict (or
+`error`). An untriaged finding has **no Triage row at all**, so "pending" should
+mean `triage__isnull=True`. As written, selecting *pending* always returns an
+empty list.
+
+**Fix:** map `pending` → `filter(triage__isnull=True)` and expose `error` in the
+dropdown (that verdict is real and currently unfilterable). Small.
+
+### 22. Logging out on one device breaks the others
+Logout now revokes the GitHub token and blanks
+`UserProfile.github_access_token` — good for "strict logout", but the token is
+per-*user*, not per-session. If you're logged in on two browsers, logging out of
+one leaves the other with a live Django session whose GitHub token is gone:
+`/repos` starts returning 401 "GitHub account not connected" while the UI still
+believes you're signed in.
+
+**Fix:** either store tokens per-session, or on logout flush *all* of that user's
+sessions (`Session.objects` filtered by `_auth_user_id`) so the state stays
+consistent. Low impact at one user, genuinely confusing at more.

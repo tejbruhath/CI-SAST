@@ -90,6 +90,20 @@ const realApi = {
       await ensureCsrf();
       return req(`/findings/${id}/fix`, { method: "POST" });
     },
+    approve: async (id, actor, note = "") => {
+      await ensureCsrf();
+      return req(`/findings/${id}/hitl`, {
+        method: "POST",
+        body: JSON.stringify({ action: "approve", actor, note }),
+      });
+    },
+  },
+  // One PR containing every approved fix for a repo — nothing else.
+  pr: {
+    createBatch: async (repo) => {
+      await ensureCsrf();
+      return req(`/pr`, { method: "POST", body: JSON.stringify({ repo }) });
+    },
   },
   metrics: () => req("/metrics"),
 };

@@ -11,12 +11,13 @@ const DYNAMIC_TOOLS = [
   { id: "nuclei", label: "nuclei" },
 ];
 
+// "None" first and default: patches are opt-in per finding, not per scan.
 const SEVERITY_OPTIONS = [
+  { value: "none", label: "None — fix on demand (default)" },
   { value: "critical", label: "Critical only" },
   { value: "high", label: "High and above" },
   { value: "medium", label: "Medium and above" },
   { value: "low", label: "Low and above" },
-  { value: "none", label: "None" },
 ];
 
 export default function ScanConfigForm({ repo, onSubmit, busy }) {
@@ -24,7 +25,9 @@ export default function ScanConfigForm({ repo, onSubmit, busy }) {
   const [ref, setRef] = useState(repo?.default_branch || "main");
   const [dynamicTarget, setDynamicTarget] = useState("https://staging.example.com");
   const [selectedTools, setSelectedTools] = useState(STATIC_TOOLS.map((t) => t.id));
-  const [autoFixSeverity, setAutoFixSeverity] = useState("high");
+  // Default "none": a scan triages everything but never writes patches on its
+  // own. Fixes are requested per-finding with "Fix with AI".
+  const [autoFixSeverity, setAutoFixSeverity] = useState("none");
 
   useEffect(() => {
     setRef(repo?.default_branch || "main");
@@ -174,7 +177,7 @@ export default function ScanConfigForm({ repo, onSubmit, busy }) {
       <div className="bg-error-container border-2 border-error p-3 flex gap-3 items-start">
         <span className="material-symbols-outlined text-error text-[20px] mt-0.5">warning</span>
         <p className="font-code-label text-[11px] text-error leading-tight uppercase">
-          HITL REQUIRED: Critical findings always require human approval before auto-remediation.
+          HITL REQUIRED: No patch is ever written or opened as a PR without your explicit approval.
         </p>
       </div>
 

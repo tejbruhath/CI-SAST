@@ -12,6 +12,7 @@ import FindingsTable from "./components/FindingsTable.jsx";
 import FindingDetail from "./components/FindingDetail.jsx";
 import AssetsPanel from "./components/AssetsPanel.jsx";
 import MetricsPanel from "./components/MetricsPanel.jsx";
+import CreatePrDialog from "./components/CreatePrDialog.jsx";
 
 const POLL_MS = 3000;
 
@@ -38,6 +39,9 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [fixingIds, setFixingIds] = useState(new Set());
+  const [prOpen, setPrOpen] = useState(false);
+  const [prResult, setPrResult] = useState(null);
+  const [prBusy, setPrBusy] = useState(false);
 
   // -------------------------------------------------------------------------
   // Auth
@@ -218,6 +222,36 @@ export default function App() {
     }
   };
 
+  // Approving is the gate: only approved fixes are ever included in a PR.
+  const doApprove = async (id) => {
+    try {
+      await api.findings.approve(id, user?.login || "reviewer");
+      await refresh();
+      if (selectedId === id) await reloadDetail(id);
+    } catch (e) {
+      setErr(e.message);
+    }
+  };
+
+  // Every approved fix for this repo that has not already gone into a PR.
+  const approvedFindings = findings.filter(
+    (f) => f.fix && ["approved", "edited"].includes(f.fix.status) && f.fix.pr_status === "none"
+  );
+
+  const doCreateBatchPr = async () => {
+    setPrBusy(true);
+    try {
+      const res = await api.pr.createBatch(selectedRepo.full_name);
+      setPrResult(res);
+      await refresh();
+    } catch (e) {
+      setErr(e.message);
+      setPrOpen(false);
+    } finally {
+      setPrBusy(false);
+    }
+  };
+
   const doFixWithAi = async (id) => {
     setFixingIds((prev) => new Set(prev).add(id));
     try {
@@ -233,14 +267,13 @@ export default function App() {
     }
   };
 
-  const canCreatePr = findings.some((f) => f.fix);
+  // Enabled only once you've actually approved something — a fix merely
+  // existing is not consent. Never silently picks a finding for you.
+  const canCreatePr = approvedFindings.length > 0;
 
   const handleCreatePr = () => {
-    const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
-    const candidate = findings
-      .filter((f) => f.fix)
-      .sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 99) - (SEVERITY_ORDER[b.severity] ?? 99))[0];
-    if (candidate) doCreatePr(candidate.id);
+    setPrResult(null);
+    setPrOpen(true);
   };
 
   // The detail serializer returns `scan` as an id, so enrich it with the scan
@@ -312,6 +345,7 @@ export default function App() {
                 onPick={setSelectedId}
                 selected={selectedId}
                 onFixWithAi={doFixWithAi}
+                onApprove={doApprove}
                 fixingIds={fixingIds}
                 busy={busy}
               />
@@ -348,6 +382,17 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {prOpen && (
+        <CreatePrDialog
+          approved={approvedFindings}
+          repoSlug={selectedRepo?.full_name}
+          result={prResult}
+          busy={prBusy}
+          onConfirm={doCreateBatchPr}
+          onClose={() => { setPrOpen(false); setPrResult(null); }}
+        />
+      )}
 
       {detail && (
         <FindingDetail
