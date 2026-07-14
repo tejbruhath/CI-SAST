@@ -53,18 +53,19 @@ def parse_repo(url: str) -> Optional[RepoCoords]:
 _GH_API = "https://api.github.com"
 
 
-def _gh_headers() -> dict:
-    if not config.GIT_TOKEN:
+def _gh_headers(token: Optional[str] = None) -> dict:
+    effective = token or config.GIT_TOKEN
+    if not effective:
         raise ScmError("SENTRIQ_GIT_TOKEN is not set — cannot open a PR")
-    return {"Authorization": f"Bearer {config.GIT_TOKEN}",
+    return {"Authorization": f"Bearer {effective}",
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28"}
 
 
-def default_branch(repo: RepoCoords) -> str:
+def default_branch(repo: RepoCoords, token: Optional[str] = None) -> str:
     try:
-        r = httpx.get(f"{_GH_API}/repos/{repo.slug}", headers=_gh_headers(),
-                      timeout=30)
+        r = httpx.get(f"{_GH_API}/repos/{repo.slug}",
+                      headers=_gh_headers(token), timeout=30)
         r.raise_for_status()
         return r.json().get("default_branch", "main")
     except httpx.HTTPStatusError as e:
@@ -75,7 +76,7 @@ def default_branch(repo: RepoCoords) -> str:
 
 
 def open_pr(repo: RepoCoords, head_branch: str, base_branch: str,
-            title: str, body: str) -> str:
+            title: str, body: str, token: Optional[str] = None) -> str:
     """Open a PR head->base; return its html_url. Raises ScmError on failure."""
     if repo.provider != "github":
         raise ScmError(f"unsupported SCM provider: {repo.provider}")
@@ -83,10 +84,10 @@ def open_pr(repo: RepoCoords, head_branch: str, base_branch: str,
                "body": body[:60000]}
     try:
         r = httpx.post(f"{_GH_API}/repos/{repo.slug}/pulls", json=payload,
-                       headers=_gh_headers(), timeout=45)
+                       headers=_gh_headers(token), timeout=45)
         if r.status_code == 422:
             # Most common: a PR for this head already exists — surface its URL.
-            existing = _find_existing_pr(repo, head_branch)
+            existing = _find_existing_pr(repo, head_branch, token=token)
             if existing:
                 return existing
             raise ScmError(f"GitHub rejected PR (422): {r.text[:300]}")
@@ -101,11 +102,12 @@ def open_pr(repo: RepoCoords, head_branch: str, base_branch: str,
         raise ScmError(f"GitHub PR create error: {e}")
 
 
-def _find_existing_pr(repo: RepoCoords, head_branch: str) -> Optional[str]:
+def _find_existing_pr(repo: RepoCoords, head_branch: str,
+                      token: Optional[str] = None) -> Optional[str]:
     try:
         r = httpx.get(f"{_GH_API}/repos/{repo.slug}/pulls",
                       params={"head": f"{repo.owner}:{head_branch}", "state": "open"},
-                      headers=_gh_headers(), timeout=30)
+                      headers=_gh_headers(token), timeout=30)
         r.raise_for_status()
         items = r.json()
         return items[0]["html_url"] if items else None

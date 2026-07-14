@@ -5,9 +5,10 @@ from celery.app.control import Control
 from django.db.models import Count, Q
 from django.http import JsonResponse
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import UserRateThrottle
 
 from ciutils.celery import app as celery_app
 
@@ -100,6 +101,11 @@ def scan_detail(request, scan_id):
     return Response(ScanSerializer(scan).data)
 
 
+# ---- throttles ---------------------------------------------------------------
+class FixRequestThrottle(UserRateThrottle):
+    rate = "30/hour"
+
+
 # ---- findings ----------------------------------------------------------------
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -136,6 +142,7 @@ def finding_detail(request, finding_id):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([FixRequestThrottle])
 def finding_fix(request, finding_id):
     """Queue on-demand AI fix generation for a finding."""
     try:
@@ -208,7 +215,7 @@ def finding_pr(request, finding_id):
     if fix.pr_status == FixSuggestion.PR_OPEN and fix.pr_url:
         return Response({"detail": "PR already open", "pr_url": fix.pr_url})
     from .tasks import create_pr
-    create_pr.delay(str(fix.id))
+    create_pr.delay(str(fix.id), user_id=request.user.id)
     ProvenanceEvent.record(ProvenanceEvent.HITL, "PR requested", scan=f.scan,
                            finding=f)
     return Response({"status": "creating", "fix": str(fix.id)},
