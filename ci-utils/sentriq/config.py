@@ -25,7 +25,7 @@ DEEPSEEK_TIMEOUT_SECONDS = int(os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "120"))
 # Master switch: when false, triage/fix stages are skipped (findings still
 # stored). Lets the pipeline run tool-only without burning tokens.
 LLM_ENABLED = os.getenv("LLM_ENABLED", "true").lower() == "true"
-# Only run expensive fix-generation for findings at/above this severity.
-FIX_MIN_SEVERITY = os.getenv("FIX_MIN_SEVERITY", "high")
+# NOTE: the fix-generation severity floor is per-scan (Scan.auto_fix_severity,
+# chosen in the UI), not a global env knob.
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")

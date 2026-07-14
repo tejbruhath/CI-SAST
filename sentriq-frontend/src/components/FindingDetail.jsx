@@ -1,9 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SeverityBadge, ToolBadge, VerdictBadge } from "./Badge.jsx";
 import DiffViewer from "./DiffViewer.jsx";
 
 export default function FindingDetail({ finding, onClose, onHitl, onCreatePr, busy }) {
   const [note, setNote] = useState("");
+
+  // Escape closes, like any dialog.
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   if (!finding) return null;
 
   const fix = finding.fixes && finding.fixes[0];
@@ -24,8 +32,14 @@ export default function FindingDetail({ finding, onClose, onHitl, onCreatePr, bu
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/80 z-40" onClick={onClose} />
 
-      {/* Drawer */}
-      <div className="fixed inset-y-0 right-0 w-full md:w-[600px] bg-surface-container border-l-4 border-outline-variant shadow-[-8px_0_0_0_rgba(42,47,61,0.5)] flex flex-col z-50">
+      {/* Centered dialog: 10% margins on every side (i.e. 80% of the viewport),
+          tighter on small screens. Fixed inset — never grows the page. */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={finding.message}
+        className="fixed inset-[4%] md:inset-[10%] bg-surface-container border-4 border-outline-variant shadow-[8px_8px_0_0_rgba(0,0,0,0.6)] flex flex-col z-50 overflow-hidden"
+      >
         {/* Header */}
         <header className="p-6 border-b-2 border-outline-variant flex flex-col gap-4 shrink-0 bg-surface">
           <div className="flex justify-between items-start">
@@ -36,7 +50,7 @@ export default function FindingDetail({ finding, onClose, onHitl, onCreatePr, bu
                 {finding.type}
               </span>
             </div>
-            <button onClick={onClose} aria-label="Close drawer" className="text-on-surface-variant hover:text-primary transition-colors focus:outline-none">
+            <button onClick={onClose} aria-label="Close dialog" className="text-on-surface-variant hover:text-primary transition-colors focus:outline-none">
               <span className="material-symbols-outlined">close</span>
             </button>
           </div>
@@ -53,7 +67,7 @@ export default function FindingDetail({ finding, onClose, onHitl, onCreatePr, bu
         </header>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-8 bg-background">
+        <div className="flex-1 min-h-0 overflow-y-auto p-6 flex flex-col gap-8 bg-background">
           {/* Triage */}
           <section className="flex flex-col gap-4 border-2 border-outline-variant bg-surface-container p-5">
             <div className="flex justify-between items-center border-b-2 border-outline-variant pb-3 mb-1">
@@ -74,7 +88,9 @@ export default function FindingDetail({ finding, onClose, onHitl, onCreatePr, bu
                 <p className="font-body-md text-body-md text-on-surface-variant leading-relaxed">{triage.rationale}</p>
               </>
             ) : (
-              <p className="font-body-md text-body-md text-on-surface-variant">Not triaged yet.</p>
+              <p className="font-body-md text-body-md text-on-surface-variant">
+                Not triaged yet — triage runs once every scanner in the scan has finished.
+              </p>
             )}
           </section>
 
@@ -95,7 +111,9 @@ export default function FindingDetail({ finding, onClose, onHitl, onCreatePr, bu
               Raw Details
             </h3>
             <pre className="border-2 border-outline-variant bg-surface-container p-4 overflow-x-auto font-code-label text-code-label text-on-surface-variant">
-              {JSON.stringify(finding.details, null, 2)}
+              {finding.details && Object.keys(finding.details).length
+                ? JSON.stringify(finding.details, null, 2)
+                : "— none reported by this tool"}
             </pre>
           </section>
         </div>

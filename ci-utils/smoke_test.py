@@ -13,6 +13,7 @@ os.environ.setdefault("USE_SQLITE", "1")
 os.environ.setdefault("LLM_ENABLED", "true")
 django.setup()
 
+from django.contrib.auth import get_user_model  # noqa: E402
 from django.test import Client  # noqa: E402
 from sentriq import executor, deepseek, config  # noqa: E402
 from sentriq.executor import ToolRun  # noqa: E402
@@ -42,7 +43,7 @@ def fake_triage(finding, snippet=""):
     return deepseek.TriageResult("real", 0.9, "exploitable", {"rule": finding["rule_id"]})
 
 
-def fake_fix(finding, snippet=""):
+def fake_fix(finding, file_text=""):
     return deepseek.FixResult("--- a/app/s.py\n+++ b/app/s.py\n@@ -3 +3 @@\n-bad\n+good\n",
                               "use parameterized query", True)
 
@@ -60,7 +61,13 @@ sys.modules["sentriq.deepseek"].generate_fix = fake_fix
 # ---- drive -------------------------------------------------------------------
 def main():
     Scan.objects.all().delete()
-    scan = Scan.objects.create(pipeline=STATIC, target="https://example.com/repo.git")
+    # The API is IsAuthenticated and scopes every read to scan.requested_by, so
+    # the smoke user must own the scan it then reads back over HTTP.
+    User = get_user_model()
+    User.objects.filter(username="smoke").delete()
+    user = User.objects.create_user(username="smoke", password="smoke")
+    scan = Scan.objects.create(pipeline=STATIC, target="https://example.com/repo.git",
+                               requested_by=user)
     result = tasks.run_scan(str(scan.id))
     scan.refresh_from_db()
 
@@ -76,9 +83,17 @@ def main():
     # gitleaks(critical) + semgrep(high) = 2 fixes
     assert FixSuggestion.objects.count() == 2, FixSuggestion.objects.count()
     assert ProvenanceEvent.objects.filter(scan=scan).count() >= 5
+    # Policy: non-critical fixes are auto-approved; critical always waits for a
+    # human. So semgrep(high) is already approved, gitleaks(critical) is not.
+    assert FixSuggestion.objects.get(
+        finding__tool="semgrep").status == FixSuggestion.APPROVED
+    assert FixSuggestion.objects.get(
+        finding__tool="gitleaks").status == FixSuggestion.PROPOSED
+    assert HitlAction.objects.filter(actor="sentriq-auto").count() == 1
 
     # ---- API ----
     c = Client()
+    c.force_login(user)
     r = c.get("/api/v1/findings")
     assert r.status_code == 200 and len(r.json()) == 3, r.content
     fid = r.json()[0]["id"]
@@ -90,11 +105,14 @@ def main():
                data={"action": "approve", "actor": "tej"},
                content_type="application/json")
     assert r.status_code == 201, r.content
-    assert HitlAction.objects.filter(action="approve").count() == 1
+    # 2 approves now: the human one above + the auto-approve from scan policy.
+    assert HitlAction.objects.filter(action="approve", actor="tej").count() == 1
+    assert HitlAction.objects.filter(action="approve").count() == 2
 
     r = c.get("/api/v1/metrics")
     m = r.json()
-    assert m["totals"]["findings"] == 3 and m["totals"]["fixes_approved"] == 1, m
+    # both fixes approved: semgrep(high) by policy, gitleaks(critical) by human.
+    assert m["totals"]["findings"] == 3 and m["totals"]["fixes_approved"] == 2, m
 
     r = c.get(f"/api/v1/provenance?scan={scan.id}")
     assert r.status_code == 200 and len(r.json()) >= 5

@@ -28,23 +28,35 @@ from .models import Scan, Finding, Triage, FixSuggestion, HitlAction, Provenance
 logger = logging.getLogger("sentriq.tasks")
 
 
-def _context_snippet(repo_dir: str, rel_file, line, radius: int = 12) -> str:
-    """Read a few lines of source around a finding for LLM context. Empty
-    string when unavailable (dynamic findings, missing file, etc.)."""
-    if not rel_file or line is None:
+def _read_source(repo_dir: str, rel_file) -> str:
+    """Full text of a finding's file, or "" when there isn't one (dynamic
+    findings, missing file, binary). Fix generation diffs against this exact
+    text, so it must not be reformatted."""
+    if not rel_file:
         return ""
     path = os.path.join(repo_dir, rel_file)
+    # Guard against a tool reporting a path outside the repo (e.g. "../../etc").
+    if not os.path.abspath(path).startswith(os.path.abspath(repo_dir) + os.sep):
+        logger.warning("refusing to read %s outside repo dir", rel_file)
+        return ""
     if not os.path.isfile(path):
         return ""
     try:
         with open(path, "r", errors="replace") as f:
-            lines = f.readlines()
+            return f.read()
     except OSError:
         return ""
+
+
+def _context_snippet(source: str, line, radius: int = 12) -> str:
+    """Line-numbered window around a finding, for triage context/citations.
+    Numbered on purpose: triage cites lines, it never authors a diff."""
+    if not source or line is None:
+        return ""
+    lines = source.splitlines()
     lo = max(0, line - 1 - radius)
     hi = min(len(lines), line - 1 + radius + 1)
-    numbered = [f"{i+1}: {lines[i].rstrip()}" for i in range(lo, hi)]
-    return "\n".join(numbered)
+    return "\n".join(f"{i+1}: {lines[i]}" for i in range(lo, hi))
 
 
 def _run_tools(scan: Scan, work_dir: str):
@@ -96,13 +108,16 @@ def _triage_and_fix(scan: Scan, rows, work_dir: str) -> None:
     # imported here so tool-only runs don't require httpx at import time
     from . import deepseek
 
+    # "none" disables patch generation only — findings are still triaged. An
+    # unreachable floor is how we skip fixes without skipping the LLM verdict.
     if scan.auto_fix_severity == "none":
-        logger.info("[%s] auto-fix disabled; skipping fix generation", scan.id)
-        return
-
-    fix_floor = SEV_SCORE.get(scan.auto_fix_severity, 3)
+        logger.info("[%s] auto-fix disabled; triage only", scan.id)
+        fix_floor = float("inf")
+    else:
+        fix_floor = SEV_SCORE.get(scan.auto_fix_severity, 3)
     for row in rows:
-        snippet = _context_snippet(work_dir, row.file, row.line)
+        source = _read_source(work_dir, row.file)
+        snippet = _context_snippet(source, row.line)
         t = deepseek.triage(_finding_dict(row), snippet)
         Triage.objects.create(
             finding=row, verdict=t.verdict, confidence=t.confidence,
@@ -113,7 +128,7 @@ def _triage_and_fix(scan: Scan, rows, work_dir: str) -> None:
                                confidence=t.confidence)
         # Only spend fix-generation tokens on real findings at/above the policy.
         if t.verdict == Triage.REAL and row.severity_score >= fix_floor:
-            fx = deepseek.generate_fix(_finding_dict(row), snippet)
+            fx = deepseek.generate_fix(_finding_dict(row), file_text=source)
             if fx.ok:
                 fix = FixSuggestion.objects.create(
                     finding=row, diff=fx.diff, explanation=fx.explanation,

@@ -34,7 +34,7 @@ Both pipelines use the same `Finding` schema, the same aggregator, the same Deep
 5. **Aggregate + dedup** — `sentriq/aggregator.py` deduplicates by fingerprint and by semantic key (`type·file·line`) across all tools in the scan.
 6. **Persist** — deduplicated findings are written to Postgres as `Finding` rows, linked to the `Scan`.
 7. **DeepSeek triage** — each finding is classified as `real`, `false_positive`, or `noise`, with a confidence score, rationale, and citation.
-8. **DeepSeek fix** — for findings marked `real` whose severity is at least `FIX_MIN_SEVERITY`, DeepSeek generates a unified-diff patch and explanation.
+8. **DeepSeek fix** — for findings marked `real` whose severity is at least the scan's `auto_fix_severity`, DeepSeek names the exact text to replace and the backend computes a unified-diff patch from the real file with `difflib`.
 9. **HITL gate** — reviewers use the frontend or `POST /api/v1/findings/{id}/hitl` to `approve`, `deny`, or `edit` a fix suggestion. The action is stored in `HitlAction`.
 10. **ASPM metrics** — the `/api/v1/metrics` endpoint rolls up scans, findings, verdicts, and HITL actions into dashboard-level risk posture.
 
@@ -153,7 +153,7 @@ def _triage_and_fix(scan: Scan, rows, work_dir: str) -> None:
         return
     from . import deepseek
 
-    fix_floor = SEV_SCORE.get(config.FIX_MIN_SEVERITY, 3)
+    fix_floor = SEV_SCORE.get(scan.auto_fix_severity, 3)
     for row in rows:
         snippet = _context_snippet(work_dir, row.file, row.line)
         t = deepseek.triage(_finding_dict(row), snippet)
@@ -198,7 +198,7 @@ flowchart LR
     AGG --> PERSIST[(Postgres<br/>Finding rows)]
     PERSIST --> TRIAGE[DeepSeek triage<br/>real / false_positive / noise]
 
-    TRIAGE -->|real &<br/>severity >= FIX_MIN_SEVERITY| FIX[DeepSeek fix<br/>unified diff + explanation]
+    TRIAGE -->|real &<br/>severity >= auto_fix_severity| FIX[DeepSeek picks old/new text<br/>difflib builds the diff]
     TRIAGE -->|FP / noise| SKIP_F[No fix generated]
 
     FIX --> HITL[[HITL gate<br/>approve / deny / edit]]
@@ -250,7 +250,8 @@ flowchart LR
 - **Official scanner images.** Scanners run as their official Docker images via the host daemon; the worker mounts `/var/run/docker.sock`. No Kubernetes or custom scanner images are required.
 - **Host path sharing.** `HOST_DATA_DIR` must be an absolute path and the same path must be visible to the host and the worker so Docker volume mounts resolve correctly.
 - **LLM can be disabled.** Set `LLM_ENABLED=false` to run scanners and persistence without spending DeepSeek tokens.
-- **Severity floor for fixes.** Fixes are only generated for findings triaged as `real` with a severity score >= `FIX_MIN_SEVERITY`. This limits expensive token usage.
+- **Severity floor for fixes.** Fixes are only generated for findings triaged as `real` with a severity score >= the scan's `auto_fix_severity`. This limits expensive token usage.
+- **The LLM never authors a diff.** It picks `old_str`/`new_str`; `difflib` computes the patch against the real file. Asking the model for a diff produced a 100% `git apply` failure rate — see [05-deepseek](05-deepseek.md).
 - **Append-only provenance.** `ProvenanceEvent` records are written at every stage and are not mutated; they form the audit trail that backs the ASPM dashboard.
 - **Adapter contract.** Every adapter must produce normalized `Finding` objects. The aggregator and downstream stages depend on that contract, so new tools are added by writing a new adapter, not by changing the pipeline core.
 

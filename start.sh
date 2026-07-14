@@ -35,6 +35,13 @@ echo "[sentriq] Starting backend on http://0.0.0.0:8000"
 "${VENV_PYTHON}" manage.py runserver 0.0.0.0:8000 &
 BACKEND_PID=$!
 
+# ---- start celery worker ----
+# Scans are dispatched with run_scan.delay(); without a worker they sit in Redis
+# forever and the scan never leaves "queued".
+echo "[sentriq] Starting Celery worker..."
+"${BACKEND_DIR}/.venv/bin/celery" -A ciutils worker --loglevel=info --concurrency=2 &
+WORKER_PID=$!
+
 # ---- start frontend ----
 cd "${FRONTEND_DIR}"
 echo "[sentriq] Starting frontend dev server..."
@@ -44,11 +51,11 @@ FRONTEND_PID=$!
 # ---- cleanup on exit / ctrl-c ----
 cleanup() {
   echo ""
-  echo "[sentriq] Shutting down frontend (pid ${FRONTEND_PID}) and backend (pid ${BACKEND_PID})..."
-  kill "${FRONTEND_PID}" 2>/dev/null || true
-  kill "${BACKEND_PID}" 2>/dev/null || true
-  wait "${FRONTEND_PID}" 2>/dev/null || true
-  wait "${BACKEND_PID}" 2>/dev/null || true
+  echo "[sentriq] Shutting down frontend, worker and backend..."
+  for pid in "${FRONTEND_PID}" "${WORKER_PID}" "${BACKEND_PID}"; do
+    kill "${pid}" 2>/dev/null || true
+    wait "${pid}" 2>/dev/null || true
+  done
   echo "[sentriq] Done. Postgres + Redis are still running."
 }
 trap cleanup EXIT INT TERM

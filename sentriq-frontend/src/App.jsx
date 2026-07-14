@@ -25,8 +25,12 @@ export default function App() {
   const [scans, setScans] = useState([]);
   const [findings, setFindings] = useState([]);
   const [filters, setFilters] = useState({ scan: "", severity: "", tool: "", verdict: "" });
-  const [selectedFinding, setSelectedFinding] = useState(null);
+  // Only the id is selection state. The detail object is fetched from it, so a
+  // late/stale response can never resurrect a closed or replaced dialog.
+  const [selectedId, setSelectedId] = useState(null);
+  const [detail, setDetail] = useState(null);
   const [queue, setQueue] = useState({ queue_depth: 0, active_tasks: 0 });
+  const [tab, setTab] = useState("dashboard");
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -105,16 +109,13 @@ export default function App() {
       setFindings(f);
       setQueue(q);
       setErr(null);
-
-      // Refresh selected finding if drawer is open
-      if (selectedFinding) {
-        const updated = f.find((x) => x.id === selectedFinding.id);
-        if (updated) setSelectedFinding(updated);
-      }
     } catch (e) {
       setErr(e.message);
     }
-  }, [selectedRepo, filters, selectedFinding?.id]);
+    // NB: never write selection state here. The list rows come from
+    // FindingListSerializer, which has no `triage`/`details` — merging one into
+    // the open dialog is what made a triaged finding read "Not triaged yet".
+  }, [selectedRepo, filters]);
 
   useEffect(() => {
     refresh();
@@ -124,6 +125,38 @@ export default function App() {
     const t = setInterval(refresh, POLL_MS);
     return () => clearInterval(t);
   }, [refresh]);
+
+  // -------------------------------------------------------------------------
+  // Open finding detail — owned solely by selectedId.
+  // `alive` is the whole trick: when you close the dialog or click another row,
+  // this effect tears down and any in-flight response is dropped instead of
+  // being written back (which reopened the dialog / showed the previous row).
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (!selectedId) {
+      setDetail(null);
+      return;
+    }
+    let alive = true;
+    // Switching rows: drop the previous row's data immediately so it can never
+    // flash in the new dialog. Same id (the 3s poll) keeps it — no flicker.
+    setDetail((cur) => (cur?.id === selectedId ? cur : null));
+    const load = async () => {
+      try {
+        const d = await api.findings.get(selectedId);
+        if (alive) setDetail(d);
+      } catch (e) {
+        if (alive) setErr(e.message);
+      }
+    };
+    load();
+    // Keep the open finding live (triage/fix land asynchronously mid-scan).
+    const t = setInterval(load, POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [selectedId]);
 
   // -------------------------------------------------------------------------
   // Actions
@@ -147,23 +180,18 @@ export default function App() {
     }
   };
 
-  const openFinding = async (id) => {
-    try {
-      const f = await api.findings.get(id);
-      setSelectedFinding(f);
-    } catch (e) {
-      setErr(e.message);
-    }
+  // Re-read the open finding after an action, but only if it's still the open
+  // one — same guard as the poll.
+  const reloadDetail = async (id) => {
+    const d = await api.findings.get(id);
+    setDetail((cur) => (cur?.id === id ? d : cur));
   };
 
   const doHitl = async (id, action, note) => {
     try {
       await api.findings.hitl(id, action, user?.login || "reviewer", note, null);
       await refresh();
-      if (selectedFinding?.id === id) {
-        const f = await api.findings.get(id);
-        setSelectedFinding(f);
-      }
+      if (selectedId === id) await reloadDetail(id);
     } catch (e) {
       setErr(e.message);
     }
@@ -173,10 +201,7 @@ export default function App() {
     try {
       await api.findings.createPr(id);
       await refresh();
-      if (selectedFinding?.id === id) {
-        const f = await api.findings.get(id);
-        setSelectedFinding(f);
-      }
+      if (selectedId === id) await reloadDetail(id);
     } catch (e) {
       setErr(e.message);
     }
@@ -209,9 +234,11 @@ export default function App() {
     return <RepoBrowser repos={repos} loading={reposLoading} user={user} onSelectRepo={setSelectedRepo} onLogout={logout} />;
   }
 
+  // h-screen + overflow-hidden: the page itself never scrolls. Every child in
+  // the chain needs min-h-0 so the findings list is the one thing that does.
   return (
-    <div className="min-h-screen flex bg-background text-on-background font-body-md text-body-md relative overflow-hidden">
-      <div className="scanline-overlay absolute inset-0 z-0" />
+    <div className="h-screen flex bg-background text-on-background font-body-md text-body-md relative overflow-hidden">
+      <div className="scanline-overlay absolute inset-0 z-0 pointer-events-none" />
       <div
         className="absolute inset-0 pointer-events-none opacity-20 z-0"
         style={{
@@ -220,48 +247,66 @@ export default function App() {
         }}
       />
 
-      <Sidebar user={user} activeTab="dashboard" onLogout={logout} />
+      <Sidebar user={user} activeTab={tab} onNavigate={setTab} onLogout={logout} />
 
-      <main className="flex-1 flex flex-col min-w-0 pl-64 z-10 relative">
+      <main className="flex-1 flex flex-col min-w-0 min-h-0 pl-64 z-10 relative">
         <Header repo={selectedRepo} user={user} onLogout={logout} />
 
         {err && (
-          <div className="mx-6 mt-6 bg-error-container border-2 border-error text-on-error-container p-3 font-body-md">
+          <div className="mx-6 mt-6 shrink-0 bg-error-container border-2 border-error text-on-error-container p-3 font-body-md">
             {err}
           </div>
         )}
 
-        <div className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-auto">
-          {/* Left column */}
-          <div className="col-span-1 flex flex-col gap-6">
-            <ScanConfigForm repo={selectedRepo} onSubmit={submitScan} busy={busy} />
-            <ScansList
-              scans={scans}
-              activeScan={filters.scan}
-              onPick={(id) => setFilters({ ...filters, scan: filters.scan === id ? "" : id })}
-            />
-          </div>
+        <div className="flex-1 min-h-0 p-6 flex flex-col gap-6">
+          {tab === "dashboard" && (
+            <>
+              <QueueStatus queue={queue} />
+              <FindingsTable
+                findings={findings}
+                filters={filters}
+                setFilters={setFilters}
+                onPick={setSelectedId}
+                selected={selectedId}
+                onCreatePr={doCreatePr}
+                busy={busy}
+              />
+            </>
+          )}
 
-          {/* Right column */}
-          <div className="col-span-1 lg:col-span-2 flex flex-col gap-6">
-            <QueueStatus queue={queue} />
-            <FindingsTable
-              findings={findings}
-              filters={filters}
-              setFilters={setFilters}
-              onPick={openFinding}
-              selected={selectedFinding?.id}
-              onCreatePr={doCreatePr}
-              busy={busy}
-            />
-          </div>
+          {tab === "config" && (
+            <div className="flex-1 min-h-0 overflow-y-auto max-w-2xl w-full">
+              <ScanConfigForm repo={selectedRepo} onSubmit={submitScan} busy={busy} />
+            </div>
+          )}
+
+          {tab === "history" && (
+            <div className="flex-1 min-h-0 overflow-y-auto max-w-3xl w-full">
+              <ScansList
+                scans={scans}
+                activeScan={filters.scan}
+                onPick={(id) => {
+                  setFilters({ ...filters, scan: filters.scan === id ? "" : id });
+                  setTab("dashboard");
+                }}
+              />
+            </div>
+          )}
+
+          {tab === "assets" && (
+            <div className="flex-1 min-h-0 flex items-center justify-center border-2 border-outline bg-surface">
+              <p className="font-code-label text-code-label text-outline uppercase">
+                Assets — not built yet
+              </p>
+            </div>
+          )}
         </div>
       </main>
 
-      {selectedFinding && (
+      {detail && (
         <FindingDetail
-          finding={selectedFinding}
-          onClose={() => setSelectedFinding(null)}
+          finding={detail}
+          onClose={() => setSelectedId(null)}
           onHitl={doHitl}
           onCreatePr={doCreatePr}
           busy={busy}

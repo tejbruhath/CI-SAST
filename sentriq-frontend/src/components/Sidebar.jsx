@@ -1,4 +1,4 @@
-export default function Sidebar({ user, activeTab = "dashboard", onLogout }) {
+export default function Sidebar({ user, activeTab = "dashboard", onNavigate, onLogout }) {
   const navItems = [
     { id: "dashboard", label: "Dashboard", icon: "dashboard" },
     { id: "config", label: "Scan Config", icon: "settings_input_component" },
@@ -17,11 +17,12 @@ export default function Sidebar({ user, activeTab = "dashboard", onLogout }) {
         {navItems.map((item) => {
           const isActive = activeTab === item.id;
           return (
-            <a
+            <button
               key={item.id}
-              href="#"
-              onClick={(e) => e.preventDefault()}
-              className={`flex items-center p-3 font-black transition-transform active:scale-95 ${
+              type="button"
+              aria-current={isActive ? "page" : undefined}
+              onClick={() => onNavigate?.(item.id)}
+              className={`flex items-center p-3 font-black transition-transform active:scale-95 text-left ${
                 isActive
                   ? "bg-primary-fixed text-primary border-2 border-primary"
                   : "text-primary border-2 border-transparent hover:border-primary hover:bg-surface-container-highest"
@@ -29,14 +30,14 @@ export default function Sidebar({ user, activeTab = "dashboard", onLogout }) {
             >
               <span className={`material-symbols-outlined mr-3 ${isActive ? "material-symbols-filled" : ""}`}>{item.icon}</span>
               <span className="font-body-sm font-bold uppercase text-sm">{item.label}</span>
-            </a>
+            </button>
           );
         })}
       </div>
 
       <div className="p-4 border-t-2 border-outline flex flex-col gap-2">
         <button
-          onClick={() => {}}
+          onClick={() => onNavigate?.("config")}
           className="w-full bg-primary text-on-primary border-2 border-primary font-code-label font-bold py-2 uppercase hover:bg-inverse-primary hover:text-white transition-colors"
         >
           START NEW SCAN

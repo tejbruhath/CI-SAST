@@ -23,7 +23,7 @@ When a scan is enqueued, the task:
 4. Runs every adapter returned by `for_pipeline(scan.pipeline)` through `executor.run_tool`, collecting raw findings, success/failure lists, and a provenance record per adapter.
 5. Deduplicates raw findings with `deduplicate()`.
 6. Persists the final findings as `Finding` rows.
-7. If `LLM_ENABLED` is true, triages each finding with DeepSeek and, only for real findings whose severity is at least `FIX_MIN_SEVERITY`, generates a `FixSuggestion`.
+7. If `LLM_ENABLED` is true, triages each finding with DeepSeek and, only for real findings whose severity is at least the scan's `auto_fix_severity`, generates a `FixSuggestion`. `auto_fix_severity="none"` means triage-only — it still triages.
 8. Finalizes the scan status as `COMPLETE`, `PARTIAL`, or `FAILED`, writes a final provenance event, and cleans up the scratch directory.
 
 This design replaces the older Kubernetes-Job dispatcher. Tools now run in-process via the executor, so there is no POST-back result API and no per-tool Kubernetes resource gating.
@@ -138,7 +138,7 @@ def _persist_findings(scan: Scan, findings) -> list:
     return rows
 ```
 
-`_triage_and_fix` is gated by `LLM_ENABLED` and only spends fix-generation tokens on real, high-severity findings:
+`_triage_and_fix` is gated by `LLM_ENABLED` and only spends fix-generation tokens on real findings at or above the scan's own `auto_fix_severity` policy:
 
 ```python
 def _triage_and_fix(scan: Scan, rows, work_dir: str) -> None:
@@ -148,9 +148,16 @@ def _triage_and_fix(scan: Scan, rows, work_dir: str) -> None:
     # imported here so tool-only runs don't require httpx at import time
     from . import deepseek
 
-    fix_floor = SEV_SCORE.get(config.FIX_MIN_SEVERITY, 3)
+    # "none" disables patch generation only — findings are still triaged. An
+    # unreachable floor is how we skip fixes without skipping the LLM verdict.
+    if scan.auto_fix_severity == "none":
+        logger.info("[%s] auto-fix disabled; triage only", scan.id)
+        fix_floor = float("inf")
+    else:
+        fix_floor = SEV_SCORE.get(scan.auto_fix_severity, 3)
     for row in rows:
-        snippet = _context_snippet(work_dir, row.file, row.line)
+        source = _read_source(work_dir, row.file)
+        snippet = _context_snippet(source, row.line)
         t = deepseek.triage(_finding_dict(row), snippet)
         Triage.objects.create(
             finding=row, verdict=t.verdict, confidence=t.confidence,
@@ -159,9 +166,9 @@ def _triage_and_fix(scan: Scan, rows, work_dir: str) -> None:
         ProvenanceEvent.record(ProvenanceEvent.TRIAGE, f"triaged: {t.verdict}",
                                scan=scan, finding=row, verdict=t.verdict,
                                confidence=t.confidence)
-        # Only spend fix-generation tokens on real, high-severity findings.
+        # Only spend fix-generation tokens on real findings at/above the policy.
         if t.verdict == Triage.REAL and row.severity_score >= fix_floor:
-            fx = deepseek.generate_fix(_finding_dict(row), snippet)
+            fx = deepseek.generate_fix(_finding_dict(row), file_text=source)
             if fx.ok:
                 FixSuggestion.objects.create(
                     finding=row, diff=fx.diff, explanation=fx.explanation,
@@ -170,27 +177,44 @@ def _triage_and_fix(scan: Scan, rows, work_dir: str) -> None:
                                        scan=scan, finding=row)
 ```
 
-`_context_snippet` reads source lines around a finding to give the LLM context, and safely returns an empty string for dynamic findings or missing files:
+Two helpers feed the LLM, and the split between them matters. `_read_source` returns the **whole file, byte-exact** — fix generation diffs against this text, so it must not be reformatted. It also refuses to read outside the repo:
 
 ```python
-def _context_snippet(repo_dir: str, rel_file, line, radius: int = 12) -> str:
-    """Read a few lines of source around a finding for LLM context. Empty
-    string when unavailable (dynamic findings, missing file, etc.)."""
-    if not rel_file or line is None:
+def _read_source(repo_dir: str, rel_file) -> str:
+    """Full text of a finding's file, or "" when there isn't one (dynamic
+    findings, missing file, binary). Fix generation diffs against this exact
+    text, so it must not be reformatted."""
+    if not rel_file:
         return ""
     path = os.path.join(repo_dir, rel_file)
+    # Guard against a tool reporting a path outside the repo (e.g. "../../etc").
+    if not os.path.abspath(path).startswith(os.path.abspath(repo_dir) + os.sep):
+        logger.warning("refusing to read %s outside repo dir", rel_file)
+        return ""
     if not os.path.isfile(path):
         return ""
     try:
         with open(path, "r", errors="replace") as f:
-            lines = f.readlines()
+            return f.read()
     except OSError:
         return ""
+```
+
+`_context_snippet` then windows that text for **triage only**, with line numbers so the verdict can cite them:
+
+```python
+def _context_snippet(source: str, line, radius: int = 12) -> str:
+    """Line-numbered window around a finding, for triage context/citations.
+    Numbered on purpose: triage cites lines, it never authors a diff."""
+    if not source or line is None:
+        return ""
+    lines = source.splitlines()
     lo = max(0, line - 1 - radius)
     hi = min(len(lines), line - 1 + radius + 1)
-    numbered = [f"{i+1}: {lines[i].rstrip()}" for i in range(lo, hi)]
-    return "\n".join(numbered)
+    return "\n".join(f"{i+1}: {lines[i]}" for i in range(lo, hi))
 ```
+
+The numbered snippet must never reach fix generation: prefixing every line with `12: ` is precisely what stopped the model from producing an appliable patch. Fixes get the raw text (see [05-deepseek](05-deepseek.md)).
 
 Finally, the scan status is resolved, persisted, and returned:
 
@@ -247,12 +271,12 @@ sequenceDiagram
     CW->>PV: NORMALIZE 'findings aggregated + persisted'
     opt LLM_ENABLED
         loop each row
-            CW->>CW: _context_snippet(work_dir, file, line)
+            CW->>CW: _read_source + _context_snippet
             CW->>LLM: triage(finding, snippet)
             CW->>DB: create Triage
             CW->>PV: TRIAGE 'triaged: {verdict}'
             alt verdict == REAL && severity_score >= fix_floor
-                CW->>LLM: generate_fix(finding, snippet)
+                CW->>LLM: generate_fix(finding, file_text)
                 CW->>DB: create FixSuggestion
                 CW->>PV: FIX 'fix generated'
             end
@@ -270,7 +294,7 @@ sequenceDiagram
 - **In-process tool execution.** `executor.run_tool` invokes adapters in the worker process; there is no separate Kubernetes Job per tool and no result-callback HTTP endpoint.
 - **Provenance at every stage.** `ProvenanceEvent.record` is called on start, clone, each adapter completion/failure, persistence, triage, fix generation, and finalization. This is the audit trail.
 - **Static-only clone.** `git_clone` is only called when `scan.pipeline == STATIC`. Dynamic pipelines must already have a reachable target at scan time.
-- **Fix token budget.** Fixes are generated only for findings triaged as `REAL` with `severity_score >= SEV_SCORE[FIX_MIN_SEVERITY]`. This limits expensive LLM calls.
+- **Fix token budget.** Fixes are generated only for findings triaged as `REAL` with `severity_score >= SEV_SCORE[scan.auto_fix_severity]`. This limits expensive LLM calls. The `"none"` policy sets an unreachable floor rather than returning early, so triage still runs for every finding.
 - **`deepseek` is lazily imported.** The module is imported inside `_triage_and_fix` so worker environments that only run tools do not need `httpx` installed at import time.
 - **Status resolution.** `PARTIAL` means at least one tool succeeded but another failed; `FAILED` is used when no tools succeeded and at least one failed.
 - **Scratch cleanup is unconditional.** The `finally` block calls `executor.cleanup(work_dir)` regardless of success or failure.

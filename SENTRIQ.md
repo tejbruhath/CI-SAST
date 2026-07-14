@@ -14,7 +14,7 @@ architecture — runnable end to end, backend + frontend, no Kubernetes.
 | Unified schema | `sentriq/schema.py` — the one `Finding` shape everything speaks (Task A1). |
 | Aggregate + dedup | `sentriq/aggregator.py` — fingerprint + semantic (type·file·line) dedup across tools (Tasks B2/B3). |
 | LLM triage | `sentriq/deepseek.py` — DeepSeek `deepseek-v4-flash`, JSON-mode; classifies real / false_positive / noise with a citation (Task B4). |
-| Fix generation | Same module — unified-diff patch for real, high-severity findings (Tasks B6/B7, minus the AST-RAG context retriever). |
+| Fix generation | Same module — the LLM names the exact text to replace and `difflib` computes the unified diff against the real file, so patches actually apply (Tasks B6/B7, minus the AST-RAG context retriever). |
 | Orchestration | `sentriq/tasks.py` — Celery chain: clone → run tools locally → normalize → dedup → persist → triage → fix. Replaces the old k8s-Job dispatcher. |
 | Persistence | Postgres via Django models: Scan, Finding, Triage, FixSuggestion, HitlAction, ProvenanceEvent (A8 provenance store). |
 | API | DRF (`/api/v1/`): scans, findings, HITL gate, provenance, ASPM metrics. |
@@ -35,7 +35,7 @@ POST /api/v1/scans {pipeline, target}
    → adapters normalize native output → unified Findings
    → aggregate + dedup → persist (Postgres)
    → DeepSeek triage each finding (real/FP/noise + citation)
-   → DeepSeek fix patch for real & severity >= FIX_MIN_SEVERITY
+   → DeepSeek fix patch for real & severity >= scan.auto_fix_severity
    → provenance event written at every stage
 Frontend polls /findings, /metrics; HITL approve/deny/edit → /findings/{id}/hitl
 ```

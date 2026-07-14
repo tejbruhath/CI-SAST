@@ -1,6 +1,3 @@
-import { mockApi } from "./mocks/api.js";
-
-const USE_MOCK = import.meta.env.VITE_USE_MOCK_API === "1";
 const BASE = (import.meta.env.VITE_API_BASE || "") + "/api/v1";
 
 function getCookie(name) {
@@ -93,4 +90,4 @@ const realApi = {
   metrics: () => req("/metrics"),
 };
 
-export const api = USE_MOCK ? mockApi : realApi;
+export const api = realApi;

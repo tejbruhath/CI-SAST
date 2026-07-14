@@ -46,8 +46,10 @@ export default function FindingsTable({ findings, filters, setFilters, onPick, s
   const set = (k) => (e) => setFilters({ ...filters, [k]: e.target.value });
 
   return (
-    <section className="bg-surface border-2 border-outline flex-1 flex flex-col min-w-0">
-      <div className="p-4 border-b-2 border-outline bg-surface-container-low flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+    // min-h-0 lets this box shrink inside the flex column so the list below —
+    // and only the list — is what scrolls.
+    <section className="bg-surface border-2 border-outline flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
+      <div className="p-4 border-b-2 border-outline bg-surface-container-low flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 shrink-0">
         <h2 className="font-headline-sm text-headline-sm text-on-surface uppercase tracking-tight flex items-center gap-2">
           <span className="material-symbols-outlined text-error">bug_report</span>
           Live Findings
@@ -80,9 +82,9 @@ export default function FindingsTable({ findings, filters, setFilters, onPick, s
         </div>
       </div>
 
-      <div className="overflow-x-auto flex-1">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto">
         <table className="w-full table-fixed text-left border-collapse font-body-sm text-body-sm">
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr className="bg-surface-container font-code-label text-code-label text-outline uppercase border-b-2 border-outline">
               <th className="p-3 border-r-2 border-outline font-medium w-20">Tool</th>
               <th className="p-3 border-r-2 border-outline font-medium w-24">Severity</th>

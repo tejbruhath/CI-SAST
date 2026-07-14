@@ -23,7 +23,7 @@ Five services are defined in `docker-compose.yml`:
 
 Both `backend` and `worker` are built from the same `ci-utils/Dockerfile` image. The backend service runs the default command (migrations + Gunicorn), while the worker service overrides the command to run Celery. The worker mounts `/var/run/docker.sock` so it can ask the host Docker daemon to create scanner containers, and it bind-mounts the shared data directory at the same absolute path as on the host so nested scanner mounts resolve correctly (the DinD path trick).
 
-Configuration comes from `.env`, which is not committed. Key variables include the DeepSeek API key and model, Postgres/Redis connection details, `SCANNER_NETWORK`, `LLM_ENABLED`, and `FIX_MIN_SEVERITY`.
+Configuration comes from `.env`, which is not committed. Key variables include the DeepSeek API key and model, Postgres/Redis connection details, `SCANNER_NETWORK`, and `LLM_ENABLED`. (The auto-fix severity floor is per-scan, chosen in the UI — not an env var.)
 
 To start everything:
 
@@ -207,7 +207,6 @@ DEEPSEEK_API_KEY=sk-your-deepseek-key
 DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 LLM_ENABLED=true
-FIX_MIN_SEVERITY=high
 
 # ---- Postgres ----
 POSTGRES_DB=sentriq
