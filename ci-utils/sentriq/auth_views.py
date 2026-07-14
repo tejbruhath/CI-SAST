@@ -7,9 +7,12 @@ from django.contrib.auth import get_user_model, login, logout
 from django.http import HttpResponseRedirect
 from django.middleware.csrf import get_token
 from django.utils.crypto import get_random_string
+from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import NotAuthenticated
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import exception_handler as drf_exception_handler
 
 from django.conf import settings
 
@@ -17,9 +20,10 @@ from .github import (
     exchange_code,
     github_oauth_url,
     github_user_info,
+    revoke_token,
 )
 from .models import UserProfile
-from .crypto import encrypt_token
+from .crypto import decrypt_token, encrypt_token
 
 logger = logging.getLogger("sentriq.auth")
 
@@ -145,7 +149,15 @@ def me(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
-    """Log the current user out."""
+    """Log the current user out and revoke the stored GitHub token."""
+    profile = getattr(request.user, "sentriq_profile", None)
+    if profile:
+        access_token = decrypt_token(profile.github_access_token)
+        if access_token:
+            revoke_token(access_token)
+        profile.github_access_token = ""
+        profile.save(update_fields=["github_access_token"])
+
     logout(request)
     return Response({"status": "logged_out"})
 
@@ -156,3 +168,10 @@ def csrf_token(request):
     """Ensure the CSRF cookie is set for the SPA."""
     token = get_token(request)
     return Response({"detail": "ok", "csrftoken": token})
+
+
+def auth_exception_handler(exc, context):
+    """Return HTTP 401 for unauthenticated requests so the SPA can detect logout."""
+    if isinstance(exc, NotAuthenticated):
+        return Response({"detail": str(exc)}, status=status.HTTP_401_UNAUTHORIZED)
+    return drf_exception_handler(exc, context)

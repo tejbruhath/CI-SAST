@@ -72,6 +72,7 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.LimitOffsetPagination",
     "PAGE_SIZE": 100,
     "UNAUTHENTICATED_USER": None,
+    "EXCEPTION_HANDLER": "sentriq.auth_views.auth_exception_handler",
 }
 
 # CORS: allow the React dev frontend to send cookies.
@@ -92,6 +93,8 @@ SESSION_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
 SESSION_COOKIE_NAME = "sentriq_sessionid"
+SESSION_COOKIE_AGE = int(os.getenv("SESSION_COOKIE_AGE", "28800"))
+SESSION_SAVE_EVERY_REQUEST = True
 CSRF_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_HTTPONLY = False  # JS needs to read the token for API calls.
 CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
