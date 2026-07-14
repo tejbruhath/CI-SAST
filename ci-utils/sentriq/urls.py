@@ -15,6 +15,7 @@ urlpatterns = [
     path("scans/<uuid:scan_id>", views.scan_detail),
     path("findings", views.findings),
     path("findings/<uuid:finding_id>", views.finding_detail),
+    path("findings/<uuid:finding_id>/fix", views.finding_fix),
     path("findings/<uuid:finding_id>/hitl", views.finding_hitl),
     path("findings/<uuid:finding_id>/pr", views.finding_pr),
     path("provenance", views.provenance),

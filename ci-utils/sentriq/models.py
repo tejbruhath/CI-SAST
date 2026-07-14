@@ -29,7 +29,7 @@ class Scan(models.Model):
     ref = models.CharField(max_length=200, default="HEAD", blank=True)
     status = models.CharField(max_length=12, choices=STATUS, default=QUEUED)
     selected_tools = models.JSONField(default=list, blank=True)
-    auto_fix_severity = models.CharField(max_length=10, default="high", blank=True)
+    auto_fix_severity = models.CharField(max_length=10, default="none", blank=True)
     requested_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.SET_NULL, related_name="scans")
