@@ -28,6 +28,9 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
     ports:
       - "${REDIS_PORT:-6380}:6379"
     healthcheck:
@@ -38,3 +41,4 @@ services:
 
 volumes:
   pgdata:
+  redisdata:

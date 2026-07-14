@@ -42,6 +42,12 @@ echo "[sentriq] Starting Celery worker..."
 "${BACKEND_DIR}/.venv/bin/celery" -A ciutils worker --loglevel=info --concurrency=2 &
 WORKER_PID=$!
 
+# ---- start celery beat ----
+# Runs scheduled tasks (e.g. the orphaned-scan reaper).
+echo "[sentriq] Starting Celery beat..."
+"${BACKEND_DIR}/.venv/bin/celery" -A ciutils beat --loglevel=info --schedule /tmp/sentriq-celerybeat-schedule &
+BEAT_PID=$!
+
 # ---- start frontend ----
 cd "${FRONTEND_DIR}"
 echo "[sentriq] Starting frontend dev server..."
@@ -51,8 +57,8 @@ FRONTEND_PID=$!
 # ---- cleanup on exit / ctrl-c ----
 cleanup() {
   echo ""
-  echo "[sentriq] Shutting down frontend, worker and backend..."
-  for pid in "${FRONTEND_PID}" "${WORKER_PID}" "${BACKEND_PID}"; do
+  echo "[sentriq] Shutting down frontend, beat, worker and backend..."
+  for pid in "${FRONTEND_PID}" "${BEAT_PID}" "${WORKER_PID}" "${BACKEND_PID}"; do
     kill "${pid}" 2>/dev/null || true
     wait "${pid}" 2>/dev/null || true
   done
