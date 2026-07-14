@@ -72,9 +72,14 @@ def git_clone(repo_url: str, ref: str, dest: str) -> None:
                        check=True, capture_output=True, text=True, env=_GIT_ENV)
 
 
-def _authed_url(repo_url: str) -> str:
-    """Inject SENTRIQ_GIT_TOKEN into an https git URL when present."""
-    token = config.GIT_TOKEN
+def _authed_url(repo_url: str, token: Optional[str] = None) -> str:
+    """Inject a token into an https git URL when present.
+
+    Prefers the caller's token (the acting user's OAuth token) and falls back to
+    the shared SENTRIQ_GIT_TOKEN, so a push is attributed to the person who
+    approved the fix rather than to whoever owns the PAT.
+    """
+    token = token or config.GIT_TOKEN
     if token and repo_url.startswith("https://") and "@" not in repo_url[8:]:
         return "https://" + token + "@" + repo_url[len("https://"):]
     return repo_url
@@ -136,18 +141,30 @@ def run_tool(adapter: BaseAdapter, target: str, work_dir: str,
 
 
 def apply_fix_and_push(repo_url: str, base_ref: str, branch: str,
-                       diff: str, commit_msg: str, work_dir: str) -> None:
-    """Clone `repo_url`, branch off `base_ref`, apply the unified `diff`, commit
-    and push `branch`. Raises on any failure (caller records pr_status=failed).
+                       diff, commit_msg: str, work_dir: str,
+                       token: Optional[str] = None) -> List[str]:
+    """Clone `repo_url`, branch off `base_ref`, apply the fix(es), commit and
+    push `branch`. Raises on any failure (caller records pr_status=failed).
 
-    Uses a full (non-shallow) clone of the base branch so the push has history.
+    `diff` is either one unified diff (string) or an ordered list of
+    (label, diff) pairs — the batch case, where every approved fix lands on ONE
+    branch as one commit each, so the user gets a single reviewable PR.
+
+    Returns the labels that applied. In batch mode a patch that will not apply
+    is SKIPPED rather than failing the whole PR: one stale diff must not block
+    every other approved fix. Single-diff mode keeps raising, since there the
+    failure is the whole job.
+
+    Uses a shallow-but-real clone of the base branch so the push has history.
     """
-    if not diff.strip():
+    single = isinstance(diff, str)
+    patches = [("fix", diff)] if single else list(diff)
+    if not patches or all(not d.strip() for _, d in patches):
         raise RuntimeError("empty diff — nothing to apply")
     if os.path.exists(work_dir):
         shutil.rmtree(work_dir, ignore_errors=True)
     os.makedirs(work_dir, exist_ok=True)
-    url = _authed_url(repo_url)
+    url = _authed_url(repo_url, token)
     base = base_ref if base_ref not in ("HEAD", "", None) else None
 
     def git(*args, **kw):
@@ -165,23 +182,40 @@ def apply_fix_and_push(repo_url: str, base_ref: str, branch: str,
     git("config", "user.name", "Sentriq Bot")
     git("checkout", "-b", branch)
 
-    # Apply the patch. DeepSeek emits `a/`+`b/` prefixed unified diffs, so the
-    # default -p1 strip is correct. --3way is more forgiving of slight drift.
-    patch = os.path.join(work_dir, ".sentriq.patch")
-    with open(patch, "w") as f:
-        f.write(diff if diff.endswith("\n") else diff + "\n")
-    try:
-        git("apply", "--3way", ".sentriq.patch")
-    except subprocess.CalledProcessError:
-        # fall back to a plain apply (some diffs lack the blobs --3way needs)
-        git("apply", ".sentriq.patch")
-    os.remove(patch)
+    applied = []
+    for label, one in patches:
+        if not one.strip():
+            continue
+        # DeepSeek diffs are `a/`+`b/` prefixed, so the default -p1 strip is
+        # right. --3way is more forgiving of drift; plain apply is the fallback
+        # for diffs lacking the blobs --3way needs.
+        patch = os.path.join(work_dir, ".sentriq.patch")
+        with open(patch, "w") as f:
+            f.write(one if one.endswith("\n") else one + "\n")
+        try:
+            try:
+                git("apply", "--3way", ".sentriq.patch")
+            except subprocess.CalledProcessError:
+                git("apply", ".sentriq.patch")
+        except subprocess.CalledProcessError:
+            os.remove(patch)
+            if single:
+                raise
+            logger.warning("[pr] skipping patch that does not apply: %s", label)
+            git("checkout", "--", ".")  # drop any partial --3way conflict state
+            continue
+        os.remove(patch)
+        git("add", "-A")
+        git("commit", "-m", commit_msg if single else f"{commit_msg}: {label}")
+        applied.append(label)
 
-    git("add", "-A")
-    git("commit", "-m", commit_msg)
+    if not applied:
+        raise RuntimeError("no approved fix applied cleanly to the base branch")
+
     subprocess.run(["git", "push", "-u", "origin", branch], cwd=work_dir,
                    check=True, timeout=config.CLONE_TIMEOUT_SECONDS,
                    capture_output=True, text=True, env=_GIT_ENV)
+    return applied
 
 
 def make_scratch(scan_id: str) -> str:

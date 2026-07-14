@@ -269,3 +269,30 @@ def metrics(request):
             r["status"]: r["n"]
             for r in scans_qs.values("status").annotate(n=Count("id"))},
     })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def batch_pr(request):
+    """Open ONE pull request containing every approved fix for a repo.
+
+    Runs synchronously: the user is staring at a confirmation dialog and needs
+    the PR url (and branch, for the "open code diffs" link) in the response.
+    Only APPROVED/EDITED fixes not already in a PR are included — approval is
+    the consent gate, so unapproved AI output can never reach a PR.
+    """
+    repo = (request.data or {}).get("repo")
+    if not repo:
+        return Response({"detail": "repo is required"},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    from .tasks import create_batch_pr
+    result = create_batch_pr(repo, user_id=request.user.id)
+
+    if result.get("status") == "empty":
+        return Response({"detail": "no approved fixes to open a PR for"},
+                        status=status.HTTP_409_CONFLICT)
+    if result.get("status") == "failed":
+        return Response({"detail": result.get("error", "PR creation failed")},
+                        status=status.HTTP_502_BAD_GATEWAY)
+    return Response(result, status=status.HTTP_201_CREATED)

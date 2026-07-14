@@ -3,350 +3,160 @@ title: React Frontend
 source:
   - sentriq-frontend/src/App.jsx
   - sentriq-frontend/src/api.js
-  - sentriq-frontend/src/components/MetricsPanel.jsx
-  - sentriq-frontend/src/components/ScanForm.jsx
+  - sentriq-frontend/src/components/Sidebar.jsx
+  - sentriq-frontend/src/components/ScanConfigForm.jsx
   - sentriq-frontend/src/components/ScansList.jsx
   - sentriq-frontend/src/components/FindingsTable.jsx
   - sentriq-frontend/src/components/FindingDetail.jsx
+  - sentriq-frontend/src/components/CreatePrDialog.jsx
+  - sentriq-frontend/src/components/AssetsPanel.jsx
+  - sentriq-frontend/src/components/MetricsPanel.jsx
   - sentriq-frontend/src/components/DiffViewer.jsx
   - sentriq-frontend/src/components/Badge.jsx
-  - sentriq-frontend/vite.config.js
 ---
 
 # React Frontend
 
-> Single-page React dashboard that lets users create scans, watch results arrive, inspect findings, and approve or deny AI-generated fixes.
+> React/Vite dashboard where a human reads triaged findings, asks the AI for a fix on the ones that matter, approves what they trust, and ships the approved set as one pull request.
 
 ## Role in the pipeline
 
-The frontend is the human-facing layer of Sentriq. It sits in front of the Django API documented in `08-api.md`, rendering scans, findings, and fixes produced by the orchestrator (`07-orchestration.md`) and the DeepSeek triage/fix generator (`05-deepseek.md`). Operators use it to filter findings, open a detail drawer, and pass or fail proposed fixes through the HITL gate.
+The frontend sits in front of the DRF API (`08-api.md`) and renders what the orchestrator (`07-orchestration.md`) and the DeepSeek layer (`05-deepseek.md`) produce. It is the **consent layer** of the pipeline: the backend never writes a patch or opens a PR by itself, so every remediation passes through two deliberate clicks here — *Fix with AI*, then *Approve*.
 
 ## How it works
 
-`App.jsx` owns all global state — metrics, scans, findings, filters, and the selected finding — and refreshes it every five seconds. On mount and whenever filters change it calls `api.metrics()`, `api.scans()`, and `api.findings(filters)` in parallel; a `setInterval` keeps polling while the page is open.
+`App.jsx` holds the dashboard state and polls the API every 3s. The sidebar switches a `tab` between four panels — dashboard (metrics + queue + findings), scan config, recent scans, assets. The finding detail is a centered modal, not a route.
 
-The UI is split into a top bar, a metrics row, a two-column grid, and an overlay drawer. The left column contains `ScanForm` and `ScansList`; the right column shows `FindingsTable`. Clicking a scan filters the findings; clicking a finding opens `FindingDetail`. Inside the drawer, `DiffViewer` renders the unified diff from the proposed fix, and the HITL buttons call `api.hitl()` to record a human verdict. After any HITL action the parent reloads the selected finding and refreshes the list so counts and badges update.
+The remediation flow is opt-in at every step:
 
-`api.js` is a thin `fetch` wrapper that talks to `/api/v1`. In development Vite proxies `/api` to the backend at `localhost:8080` (or `VITE_API_PROXY`) so the browser stays on one origin; in production the same-host bundle relies on nginx or `VITE_API_BASE`.
+1. A scan triages **every** finding (`auto_fix_severity` defaults to `"none"`), so the STATUS column shows the AI verdict — `real`, `false positive`, `noise` — and nothing is patched.
+2. The FIX column offers **FIX WITH AI** per finding. Clicking it `POST`s `/findings/{id}/fix`; the row shows `FIXING…` until a fix appears in the polled list.
+3. Once a fix exists the cell reads **APPROVE NEEDED**. Clicking approves it (`POST /findings/{id}/hitl`) and the cell becomes `✓ APPROVED`.
+4. **CREATE PR** in the sidebar stays disabled until at least one fix is approved. It opens `CreatePrDialog`, which lists exactly the approved fixes and states that nothing else is included, then posts `/pr` for the batch.
 
 ## Code walkthrough
 
-### App.jsx — state and polling
+Selection is an **id**, never an object — load-bearing, not a style choice:
 
 ```jsx
-const POLL_MS = 5000;
-
-export default function App() {
-  const [metrics, setMetrics] = useState(null);
-  const [scans, setScans] = useState([]);
-  const [findings, setFindings] = useState([]);
-  const [filters, setFilters] = useState({ scan: "", severity: "", tool: "", verdict: "" });
-  const [selected, setSelected] = useState(null);   // finding detail (full object)
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState(null);
+  // Only the id is selection state. The detail object is fetched from it, so a
+  // late/stale response can never resurrect a closed or replaced dialog.
+  const [selectedId, setSelectedId] = useState(null);
+  const [detail, setDetail] = useState(null);
 ```
 
-`App` keeps the dashboard state. `filters` drives the `/findings` query; `selected` holds the full finding object shown in the drawer.
+The detail is fetched by an effect owned by `selectedId` and guarded by `alive`:
 
 ```jsx
-  const refresh = useCallback(async () => {
-    try {
-      const [m, s, f] = await Promise.all([
-        api.metrics(), api.scans(), api.findings(filters),
-      ]);
-      setMetrics(m); setScans(s); setFindings(f); setErr(null);
-    } catch (e) {
-      setErr(e.message);
-    }
-  }, [filters]);
-
-  useEffect(() => { refresh(); }, [refresh]);
   useEffect(() => {
-    const t = setInterval(refresh, POLL_MS);
-    return () => clearInterval(t);
-  }, [refresh]);
+    if (!selectedId) {
+      setDetail(null);
+      return;
+    }
+    let alive = true;
+    // Switching rows: drop the previous row's data immediately so it can never
+    // flash in the new dialog. Same id (the 3s poll) keeps it — no flicker.
+    setDetail((cur) => (cur?.id === selectedId ? cur : null));
+    const load = async () => {
+      try {
+        const d = await api.findings.get(selectedId);
+        if (alive) setDetail(d);
+      } catch (e) {
+        if (alive) setErr(e.message);
+      }
+    };
+    load();
+    // Keep the open finding live (triage/fix land asynchronously mid-scan).
+    const t = setInterval(load, POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [selectedId]);
 ```
 
-`refresh` fetches three endpoints in parallel whenever filters change, and the interval re-runs it every 5 seconds so scans, findings, and metrics stay live.
+`refresh()` deliberately does **not** touch selection state:
 
 ```jsx
-  const openFinding = async (id) => {
-    try { setSelected(await api.finding(id)); }
-    catch (e) { setErr(e.message); }
-  };
-
-  const doHitl = async (id, action, note) => {
-    await api.hitl(id, action, "reviewer", note, null);
-    await openFinding(id);   // reload detail
-    refresh();
-  };
+    // NB: never write selection state here. The list rows come from
+    // FindingListSerializer, which has no `triage`/`details` — merging one into
+    // the open dialog is what made a triaged finding read "Not triaged yet".
+  }, [selectedRepo, filters]);
 ```
 
-`openFinding` fetches one finding by id into the drawer. `doHitl` posts a review action, reloads the detail to show the new state, and refreshes the list.
-
-### api.js — thin same-origin client
+Only approved fixes are PR candidates, and the button is gated on that — not on a fix merely existing:
 
 ```jsx
-const BASE = (import.meta.env.VITE_API_BASE || "") + "/api/v1";
-
-async function req(path, opts = {}) {
-  const res = await fetch(BASE + path, {
-    headers: { "Content-Type": "application/json" },
-    ...opts,
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`${res.status} ${path}: ${body}`);
-  }
-  return res.status === 204 ? null : res.json();
-}
-```
-
-The client uses same-origin `/api/v1` by default and JSON bodies. Errors surface the HTTP status and response text.
-
-```jsx
-export const api = {
-  createScan: (pipeline, target, ref) =>
-    req("/scans", { method: "POST", body: JSON.stringify({ pipeline, target, ref }) }),
-  scans: () => req("/scans"),
-  scan: (id) => req(`/scans/${id}`),
-  findings: (params = {}) => {
-    const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
-    return req("/findings" + (q ? `?${q}` : ""));
-  },
-  finding: (id) => req(`/findings/${id}`),
-  hitl: (id, action, actor, note, edited_diff) =>
-    req(`/findings/${id}/hitl`, {
-      method: "POST",
-      body: JSON.stringify({ action, actor, note, edited_diff }),
-    }),
-  metrics: () => req("/metrics"),
-```
-
-Endpoints map directly to `08-api.md`: scans, filtered findings, single finding, HITL, and metrics. `findings` strips empty filters before building the query string.
-
-### vite.config.js — dev proxy / single-origin
-
-```jsx
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    host: true,
-    port: 3000,
-    proxy: {
-      "/api": {
-        target: process.env.VITE_API_PROXY || "http://localhost:8080",
-        changeOrigin: true,
-      },
-    },
-  },
-});
-```
-
-In development the Vite server serves the React app on port 3000 and forwards `/api` requests to the Django backend. This avoids CORS and mirrors the production single-origin layout.
-
-### Badge.jsx — severity / verdict / tool chips
-
-```jsx
-export function SeverityBadge({ severity }) {
-  return <span className={`badge sev-${severity}`}>{severity}</span>;
-}
-
-export function VerdictBadge({ verdict }) {
-  const v = verdict || "pending";
-  const label = v === "false_positive" ? "false pos" : v;
-  return <span className={`badge v-${v}`}>{label}</span>;
-}
-```
-
-Small presentational components used by `FindingsTable` and `FindingDetail`. `VerdictBadge` normalises missing verdicts to `pending` and shortens `false_positive` for display.
-
-### MetricsPanel.jsx — top-level counters
-
-```jsx
-const SEV_ORDER = ["critical", "high", "medium", "low", "info"];
-const SEV_VAR = {
-  critical: "var(--crit)", high: "var(--high)", medium: "var(--med)",
-  low: "var(--low)", info: "var(--info)",
-};
-```
-
-Renders the totals tile and a stacked severity bar using CSS variables. It is read-only; `App` passes the `/metrics` response.
-
-### ScanForm.jsx — create a scan
-
-```jsx
-const submit = (e) => {
-  e.preventDefault();
-  if (!target.trim()) return;
-  onSubmit(pipeline, target.trim(), ref.trim() || "HEAD");
-};
-```
-
-A controlled form with a pipeline selector and target/ref inputs. Static scans ask for a git repo and ref; dynamic scans ask for a target URL.
-
-### ScansList.jsx — recent scans sidebar
-
-```jsx
-export default function ScansList({ scans, onPick, activeScan }) {
-  if (!scans.length) return <div className="spinner">No scans yet.</div>;
-  return (
-    <div>
-      {scans.map((s) => (
-        <div key={s.id} className="scan-row" onClick={() => onPick(s.id)}
-          style={activeScan === s.id ? { color: "var(--accent)" } : undefined}>
-          <div className="t" title={s.target}>
-            <span className="badge tool" style={{ marginRight: 6 }}>{s.pipeline}</span>
-            {s.target.replace(/^https?:\/\//, "")}
-          </div>
-          <div className="s" style={{ color: statusColor(s.status) }}>
-            {s.status} · {s.finding_count}
-          </div>
-        </div>
-      ))}
-    </div>
+  // Every approved fix for this repo that has not already gone into a PR.
+  const approvedFindings = findings.filter(
+    (f) => f.fix && ["approved", "edited"].includes(f.fix.status) && f.fix.pr_status === "none"
   );
-}
+
+  // Enabled only once you've actually approved something — a fix merely
+  // existing is not consent. Never silently picks a finding for you.
+  const canCreatePr = approvedFindings.length > 0;
 ```
 
-Lists scans with a coloured status dot and finding count. Clicking toggles the scan filter in `App`.
-
-### FindingsTable.jsx — filterable findings grid
+`FixCell` in `FindingsTable.jsx` encodes the whole remediation lifecycle in one cell:
 
 ```jsx
-const set = (k) => (e) => setFilters({ ...filters, [k]: e.target.value });
-```
-
-Three dropdowns update the `filters` state held by `App`. The table row highlights the selected finding and calls `onPick` to open the detail drawer.
-
-```jsx
-<tr key={f.id} className={`f-row ${selected === f.id ? "sel" : ""}`}
-  onClick={() => onPick(f.id)}>
-  <td><SeverityBadge severity={f.severity} /></td>
-  <td><ToolBadge tool={f.tool} /></td>
-  <td>{f.message}<div className="file mono">{f.rule_id}</div></td>
-  <td className="mono file">
-    {f.file ? (f.line ? `${f.file}:${f.line}` : f.file) : "—"}
-  </td>
-  <td><VerdictBadge verdict={f.verdict} /></td>
-  <td>{f.has_fix ? <span className="fix-dot">●</span> : ""}</td>
-</tr>
-```
-
-Each row shows severity, tool, message, rule id, file/line, verdict, and whether a fix exists.
-
-### FindingDetail.jsx — drawer with HITL actions
-
-```jsx
-const fix = finding.fixes && finding.fixes[0];
-const triage = finding.triage;
-
-const act = async (action) => {
-  setBusy(true);
-  try {
-    await onHitl(finding.id, action, note);
-  } finally {
-    setBusy(false);
+  if (fix.status === "approved" || fix.status === "edited") {
+    return (
+      <span className="text-primary font-bold" title="Included in the next PR">
+        ✓ APPROVED
+      </span>
+    );
   }
-};
+
+  // proposed: the fix exists but you have not okayed it yet.
+  return action(
+    "APPROVE NEEDED",
+    "border-tertiary text-tertiary hover:bg-tertiary hover:text-black",
+    (e) => { stop(e); onApprove?.(id); }
+  );
 ```
 
-The drawer takes the first fix and the triage block. `act` invokes the parent HITL handler with the current note and action.
+`CreatePrDialog` can only build the "open code diffs" link once a branch exists:
 
 ```jsx
-<div className="hitl-actions">
-  <button className="ok" disabled={busy} onClick={() => act("approve")}>Approve</button>
-  <button className="danger" disabled={busy} onClick={() => act("deny")}>Deny</button>
-  <button className="ghost" disabled={busy} onClick={() => act("edit")}>Mark edited</button>
-</div>
+  // github.dev opens the web editor on a branch that already contains the
+  // fixes — the closest thing to "Codespaces with the diffs applied" that a
+  // URL can express. It only works once the branch is pushed, i.e. post-PR.
+  const diffsUrl =
+    result?.branch && repoSlug
+      ? `https://github.dev/${repoSlug}/tree/${result.branch}`
+      : null;
 ```
-
-Three possible verdicts: `approve`, `deny`, and `edit`. `edit` records that a human modified the proposed diff before accepting.
-
-### DiffViewer.jsx — unified-diff renderer
-
-```jsx
-const lines = diff.split("\n");
-return (
-  <pre className="diff">
-    {lines.map((ln, i) => {
-      let cls = "";
-      if (ln.startsWith("+++") || ln.startsWith("---") || ln.startsWith("diff ")) cls = "meta";
-      else if (ln.startsWith("@@")) cls = "hunk";
-      else if (ln.startsWith("+")) cls = "add";
-      else if (ln.startsWith("-")) cls = "del";
-      return <span key={i} className={`ln ${cls}`}>{ln || " "}</span>;
-    })}
-  </pre>
-);
-```
-
-Parses the raw diff string line by line, classifies file meta lines, hunk headers, additions, and deletions, and renders them with CSS classes. Empty lines are replaced by a space so the `span` does not collapse.
 
 ## Diagram
 
-### Component tree
-
 ```mermaid
 flowchart TD
-    A[App] --> M[MetricsPanel]
-    A --> SF[ScanForm]
-    A --> SL[ScansList]
-    A --> FT[FindingsTable]
-    A --> FD[FindingDetail]
-    FD --> DV[DiffViewer]
-    FD --> B[Badge]
-    FT --> B
-    SL --> statusColor
-    A --> api[api.js]
-```
-
-### Data flow
-
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant App
-    participant api as api.js
-    participant Backend as Django /api/v1
-
-    App->>api: metrics(), scans(), findings(filters)
-    api->>Backend: GET /api/v1/metrics etc.
-    Backend-->>api: JSON responses
-    api-->>App: metrics, scans, findings
-    loop Every 5 s
-        App->>api: refresh()
-        api->>Backend: same three calls
-        Backend-->>api: updates
-        api-->>App: updated state
-    end
-    Browser->>App: click finding
-    App->>api: finding(id)
-    api->>Backend: GET /findings/:id
-    Backend-->>api: full finding
-    api-->>App: selected
-    Browser->>App: Approve / Deny / Edit
-    App->>api: hitl(id, action, ...)
-    api->>Backend: POST /findings/:id/hitl
-    Backend-->>api: result
-    api-->>App: ok
-    App->>api: finding(id) + refresh()
-    api->>Backend: reload detail + list
+    SCAN[Scan completes<br/>every finding triaged] --> LIST[FindingsTable<br/>STATUS = AI verdict]
+    LIST -->|click row| DETAIL[FindingDetail modal<br/>triage + diff]
+    LIST -->|FIX WITH AI| FIX[POST /findings/id/fix<br/>202 then FIXING...]
+    DETAIL -->|FIX WITH AI| FIX
+    FIX --> PROPOSED[fix = proposed<br/>APPROVE NEEDED]
+    PROPOSED -->|Approve| APPROVED[fix = approved<br/>counts toward CREATE PR]
+    APPROVED --> BTN[Sidebar CREATE PR<br/>enabled]
+    BTN --> DLG[CreatePrDialog<br/>lists approved only]
+    DLG -->|confirm| BATCH[POST /pr<br/>one branch, one PR]
+    BATCH --> DONE[View PR + Open code diffs<br/>github.dev on the branch]
 ```
 
 ## Key decisions & gotchas
 
-- **Single source of truth**: `App` owns all state; child components receive props and callbacks. This keeps the polling logic in one place.
-- **Polling is cheap but not reactive**: the dashboard refreshes every 5 seconds. For very large findings lists this may become noisy; future work could move to websockets or server-sent events.
-- **HITL reload round-trip**: after a review action, `doHitl` waits for `openFinding(id)` and then calls `refresh()`. If either call fails the error surfaces in `App`'s `err` banner.
-- **DiffViewer is minimal**: it classifies lines by prefix only. It does not apply patches, compute side-by-side views, or render intra-line changes.
-- **Same-origin by default**: production assumes nginx serves both the built React bundle and the Django API from the same host. Use `VITE_API_BASE` only when cross-origin is unavoidable.
-- **The `edit` action**: `FindingDetail` passes `null` for `edited_diff`. If the operator actually edits the patch in the UI, the field would need to be wired through the note area or a dedicated editor.
+- **Selection is an id, and the poll never writes it.** Both rules exist because of one bug: the 3s poll used to merge a *list* row into the open dialog. List rows come from `FindingListSerializer`, which has no `triage` or `details` field, so a fully triaged finding read "Not triaged yet" three seconds after opening. The same stale-closure write made a closed dialog reopen, and made row 1's dialog appear when you clicked row 2. Don't reintroduce either.
+- **Nothing is automatic, and the two defaults must not drift.** `auto_fix_severity` defaults to `"none"` in *both* the API and `ScanConfigForm`. When the form still defaulted to `"high"` while the backend said `"none"`, scans silently produced `proposed` fixes that no UI could approve — every Create PR returned `409 approve the fix before opening a PR`.
+- **Approval is the gate, and it is explicit.** `CreatePrDialog` enumerates the approved fixes before doing anything. Gating Create PR on "a fix exists" would let unreviewed AI output reach a PR.
+- **"Open code diffs" cannot precede the branch.** No URL can pre-apply a patch in github.dev/Codespaces, so the button only appears after the PR pushes the branch. See [concerns](concerns.md).
+- **The page never scrolls.** Root is `h-screen overflow-hidden`; every flex ancestor carries `min-h-0` so the findings list is the only scroller (its `thead` is sticky).
+- **The verdict filter has no "pending".** No `Triage` row is ever written with that verdict — an untriaged finding has no triage row at all — so the option matched nothing and was removed.
+- **No tests.** The frontend is verified by `npm run build` alone, which proves imports resolve and nothing else. See [concerns](concerns.md).
 
 ## Related docs
 
-- [00-overview.md](./00-overview.md) — what Sentriq does end to end
-- [05-deepseek.md](./05-deepseek.md) — how fixes and triage are generated
-- [07-orchestration.md](./07-orchestration.md) — background scan orchestrator that produces the data shown here
-- [08-api.md](./08-api.md) — backend endpoints consumed by `api.js`
-- [10-deployment.md](./10-deployment.md) — nginx and container layout that serves the built frontend
+- [08-api](08-api.md) — the endpoints consumed here
+- [07-orchestration](07-orchestration.md) — what produces findings, triage, and fixes
+- [05-deepseek](05-deepseek.md) — where the diff in the modal comes from
+- [concerns](concerns.md) — known gaps, including the untested interaction fixes

@@ -18,6 +18,7 @@ urlpatterns = [
     path("findings/<uuid:finding_id>/fix", views.finding_fix),
     path("findings/<uuid:finding_id>/hitl", views.finding_hitl),
     path("findings/<uuid:finding_id>/pr", views.finding_pr),
+    path("pr", views.batch_pr),
     path("provenance", views.provenance),
     path("metrics", views.metrics),
 ]
