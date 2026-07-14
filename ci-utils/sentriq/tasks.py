@@ -17,6 +17,8 @@ import logging
 import os
 
 from celery import shared_task
+from celery.signals import worker_ready
+from django.conf import settings
 from django.utils import timezone
 
 from . import config, executor
@@ -130,17 +132,9 @@ def _triage_and_fix(scan: Scan, rows, work_dir: str) -> None:
         if t.verdict == Triage.REAL and row.severity_score >= fix_floor:
             fx = deepseek.generate_fix(_finding_dict(row), file_text=source)
             if fx.ok:
-                fix = FixSuggestion.objects.create(
+                FixSuggestion.objects.create(
                     finding=row, diff=fx.diff, explanation=fx.explanation,
                     model=config.DEEPSEEK_MODEL)
-                # Auto-approve non-critical fixes so PR can be created without HITL.
-                if row.severity != "critical":
-                    fix.status = FixSuggestion.APPROVED
-                    fix.save(update_fields=["status"])
-                    HitlAction.objects.create(
-                        finding=row, action=HitlAction.APPROVE,
-                        actor="sentriq-auto",
-                        note=f"Auto-approved per scan policy (>= {scan.auto_fix_severity})")
                 ProvenanceEvent.record(ProvenanceEvent.FIX, "fix generated",
                                        scan=scan, finding=row)
 
@@ -151,6 +145,83 @@ def _finding_dict(row: Finding) -> dict:
         "rule_id": row.rule_id, "message": row.message, "file": row.file,
         "line": row.line, "details": row.details,
     }
+
+
+@shared_task(name="sentriq.generate_fix")
+def generate_fix_for_finding(finding_id: str) -> dict:
+    """On-demand fix generation for a single finding.
+
+    Re-clones the scan target, reads the affected file, asks the LLM for a fix,
+    and stores it as APPROVED (the user clicking "Fix with AI" is the human
+    decision). Idempotent: returns an existing fix if one already exists.
+    Never raises.
+    """
+    from . import deepseek
+
+    try:
+        row = Finding.objects.select_related("scan").get(id=finding_id)
+    except Finding.DoesNotExist:
+        logger.warning("generate_fix: finding %s not found", finding_id)
+        return {"finding": finding_id, "status": "not_found"}
+
+    existing = row.fixes.first()
+    if existing:
+        return {"finding": finding_id, "status": "exists", "fix": str(existing.id)}
+
+    scan = row.scan
+    ProvenanceEvent.record(ProvenanceEvent.FIX, "on-demand fix generation started",
+                           scan=scan, finding=row)
+
+    work_dir = ""
+    try:
+        work_dir = executor.make_scratch(f"fix-{finding_id}")
+        executor.git_clone(scan.target, scan.ref, work_dir)
+        source = _read_source(work_dir, row.file)
+        fx = deepseek.generate_fix(_finding_dict(row), file_text=source)
+        if fx.ok:
+            fix = FixSuggestion.objects.create(
+                finding=row, diff=fx.diff, explanation=fx.explanation,
+                status=FixSuggestion.APPROVED, model=config.DEEPSEEK_MODEL)
+            ProvenanceEvent.record(ProvenanceEvent.FIX, "on-demand fix generated",
+                                   scan=scan, finding=row, fix=str(fix.id))
+            return {"finding": finding_id, "status": "created", "fix": str(fix.id)}
+        ProvenanceEvent.record(ProvenanceEvent.FIX, "on-demand fix failed",
+                               scan=scan, finding=row, error=fx.explanation)
+        return {"finding": finding_id, "status": "failed", "reason": fx.explanation}
+    except Exception as exc:
+        logger.exception("generate_fix failed for finding %s", finding_id)
+        ProvenanceEvent.record(ProvenanceEvent.FIX, "on-demand fix errored",
+                               scan=scan, finding=row, error=str(exc)[:500])
+        return {"finding": finding_id, "status": "error", "reason": str(exc)}
+    finally:
+        if work_dir:
+            executor.cleanup(work_dir)
+
+
+@shared_task(name="sentriq.reap_orphaned_scans")
+def reap_orphaned_scans() -> dict:
+    """Mark RUNNING/QUEUED scans that outlived the task time limit as FAILED."""
+    limit = getattr(settings, "CELERY_TASK_TIME_LIMIT", 3600)
+    cutoff = timezone.now() - timezone.timedelta(seconds=limit)
+    stale = Scan.objects.filter(
+        status__in=(Scan.RUNNING, Scan.QUEUED), created_at__lt=cutoff)
+    count = 0
+    for scan in stale:
+        scan.status = Scan.FAILED
+        scan.error = "orphaned: worker died mid-scan"
+        scan.finished_at = timezone.now()
+        scan.save(update_fields=["status", "error", "finished_at"])
+        ProvenanceEvent.record(ProvenanceEvent.SCAN, "orphaned scan reaped",
+                               scan=scan, error=scan.error)
+        count += 1
+        logger.warning("reaped orphaned scan %s (created %s)", scan.id, scan.created_at)
+    return {"reaped": count}
+
+
+@worker_ready.connect
+def _schedule_reap_on_boot(sender, **kwargs):
+    """Run the orphan reaper once when a Celery worker starts."""
+    reap_orphaned_scans.delay()
 
 
 @shared_task(name="sentriq.create_pr")

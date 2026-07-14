@@ -14,7 +14,7 @@ class ScanCreateSerializer(serializers.Serializer):
         child=serializers.CharField(), required=False, allow_empty=True)
     auto_fix_severity = serializers.ChoiceField(
         choices=["critical", "high", "medium", "low", "none"],
-        required=False, default="high")
+        required=False, default="none")
 
     def validate(self, attrs):
         if attrs["pipeline"] == DYNAMIC and not attrs["target"].startswith(("http://", "https://")):
@@ -74,7 +74,8 @@ class FindingListSerializer(serializers.ModelSerializer):
         if not fixes:
             return None
         fx = fixes[0]
-        return {"status": fx.status, "pr_status": fx.pr_status, "pr_url": fx.pr_url}
+        return {"id": str(fx.id), "status": fx.status, "pr_status": fx.pr_status,
+                "pr_url": fx.pr_url, "branch": fx.branch}
 
 
 class FindingDetailSerializer(serializers.ModelSerializer):

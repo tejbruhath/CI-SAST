@@ -1,6 +1,6 @@
-"""Fix generation: a real, non-critical finding gets an auto-approved fix.
+"""Fix generation: fixes generated during a scan stay proposed.
 
-This guards the path that used to NameError on HitlAction. Run:
+Run:
   USE_SQLITE=1 python manage.py test sentriq.test_fix_pipeline
 """
 from unittest.mock import patch
@@ -26,14 +26,14 @@ class FixPipelineTests(TestCase):
                   return_value=FixResult(diff="--- a\n+++ b\n", explanation="x", ok=True))
     @patch.object(deepseek, "triage",
                   return_value=TriageResult("real", 0.9, "why", {}))
-    def test_real_noncritical_finding_gets_autoapproved_fix(self, *_mocks):
+    def test_real_noncritical_finding_gets_proposed_fix(self, *_mocks):
         with patch.object(config, "LLM_ENABLED", True):
             _triage_and_fix(self.scan, [self.finding], work_dir="/nonexistent")
 
         self.assertEqual(Triage.objects.filter(finding=self.finding).count(), 1)
         fix = FixSuggestion.objects.get(finding=self.finding)
-        self.assertEqual(fix.status, FixSuggestion.APPROVED)
-        self.assertTrue(
+        self.assertEqual(fix.status, FixSuggestion.PROPOSED)
+        self.assertFalse(
             HitlAction.objects.filter(
                 finding=self.finding, action=HitlAction.APPROVE).exists())
 

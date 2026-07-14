@@ -69,7 +69,7 @@ def scans(request):
         scan = Scan.objects.create(
             pipeline=d["pipeline"], target=d["target"], ref=d.get("ref") or "HEAD",
             selected_tools=requested_tools,
-            auto_fix_severity=d.get("auto_fix_severity") or "high",
+            auto_fix_severity=d.get("auto_fix_severity", "none"),
             requested_by=request.user,
             tools_requested=requested_tools)
         # enqueue async; import here to avoid a hard Celery import on read paths
@@ -104,7 +104,9 @@ def scan_detail(request, scan_id):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def findings(request):
-    qs = owned_findings(request.user).select_related("triage").prefetch_related("fixes")
+    qs = owned_findings(request.user).filter(
+        scan__status__in=[Scan.COMPLETE, Scan.PARTIAL, Scan.FAILED]
+    ).select_related("triage").prefetch_related("fixes")
     for field in ("severity", "tool", "type", "pipeline"):
         val = request.query_params.get(field)
         if val:
@@ -130,6 +132,19 @@ def finding_detail(request, finding_id):
     except Finding.DoesNotExist:
         return Response({"detail": "not found"}, status=status.HTTP_404_NOT_FOUND)
     return Response(FindingDetailSerializer(f).data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def finding_fix(request, finding_id):
+    """Queue on-demand AI fix generation for a finding."""
+    try:
+        f = owned_findings(request.user).get(id=finding_id)
+    except Finding.DoesNotExist:
+        return Response({"detail": "not found"}, status=status.HTTP_404_NOT_FOUND)
+    from .tasks import generate_fix_for_finding
+    generate_fix_for_finding.delay(str(f.id))
+    return Response({"status": "queued"}, status=status.HTTP_202_ACCEPTED)
 
 
 # ---- HITL gate ---------------------------------------------------------------
