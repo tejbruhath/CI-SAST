@@ -18,19 +18,18 @@ export function SeverityBadge({ severity, blink = false }) {
   );
 }
 
-export function VerdictBadge({ verdict }) {
+export function VerdictBadge({ verdict, severity }) {
   const v = verdict || "pending";
-  const label = v === "false_positive" ? "FALSE POS" : v;
-  const styles = {
-    real: "bg-error text-on-error border-error",
-    false_positive: "bg-surface-variant text-on-surface border-outline-variant",
-    noise: "bg-surface-container-high text-on-surface-variant border-outline",
-    pending: "bg-primary text-on-primary border-primary",
-    error: "bg-error-container text-on-error-container border-error",
-  };
+  const label = v === "false_positive" ? "FALSE POSITIVE" : v.toUpperCase();
+  const isHighSeverity = severity === "critical" || severity === "high";
+  const textColor =
+    v === "real" ? (isHighSeverity ? "text-error" : "text-tertiary") : "text-outline";
+  const borderColor =
+    v === "real" ? (isHighSeverity ? "border-error" : "border-tertiary") : "border-outline";
 
   return (
-    <span className={`inline-block font-code-label text-[10px] px-2 py-0.5 border-2 uppercase font-bold ${styles[v] || styles.pending}`}>
+    <span
+      className={`inline-block font-code-label text-[10px] px-2 py-0.5 border-2 uppercase font-bold bg-surface ${textColor} ${borderColor}`}>
       {label}
     </span>
   );
