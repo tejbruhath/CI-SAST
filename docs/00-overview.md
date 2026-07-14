@@ -34,8 +34,8 @@ Both pipelines use the same `Finding` schema, the same aggregator, the same Deep
 5. **Aggregate + dedup** — `sentriq/aggregator.py` deduplicates by fingerprint and by semantic key (`type·file·line`) across all tools in the scan.
 6. **Persist** — deduplicated findings are written to Postgres as `Finding` rows, linked to the `Scan`.
 7. **DeepSeek triage** — each finding is classified as `real`, `false_positive`, or `noise`, with a confidence score, rationale, and citation.
-8. **DeepSeek fix** — for findings marked `real` whose severity is at least the scan's `auto_fix_severity`, DeepSeek names the exact text to replace and the backend computes a unified-diff patch from the real file with `difflib`.
-9. **HITL gate** — reviewers use the frontend or `POST /api/v1/findings/{id}/hitl` to `approve`, `deny`, or `edit` a fix suggestion. The action is stored in `HitlAction`.
+8. **DeepSeek fix (off by default)** — `auto_fix_severity` defaults to `"none"`, so a scan spends triage tokens but never generates patches on its own. When a scan explicitly sets a floor, findings marked `real` at/above it get a patch: DeepSeek names the exact text to replace and the backend computes the unified diff from the real file with `difflib`.
+9. **Fix on demand** — nothing is patched automatically. The user clicks *Fix with AI* on a finding, which enqueues `sentriq.generate_fix`; that click **is** the human decision, so the resulting `FixSuggestion` is stored `approved`. (The `HitlAction` model and `/hitl` endpoint still exist but no longer back a UI gate — see [concerns](concerns.md#14-the-hitl-surface-is-now-dead-code).)
 10. **ASPM metrics** — the `/api/v1/metrics` endpoint rolls up scans, findings, verdicts, and HITL actions into dashboard-level risk posture.
 
 Provenance is written at every transition via `ProvenanceEvent.record`, producing an append-only audit trail that can be queried with `/api/v1/provenance?scan=`.
@@ -198,10 +198,10 @@ flowchart LR
     AGG --> PERSIST[(Postgres<br/>Finding rows)]
     PERSIST --> TRIAGE[DeepSeek triage<br/>real / false_positive / noise]
 
-    TRIAGE -->|real &<br/>severity >= auto_fix_severity| FIX[DeepSeek picks old/new text<br/>difflib builds the diff]
+    TRIAGE -->|on demand, or<br/>severity >= auto_fix_severity| FIX[DeepSeek picks old/new text<br/>difflib builds the diff]
     TRIAGE -->|FP / noise| SKIP_F[No fix generated]
 
-    FIX --> HITL[[HITL gate<br/>approve / deny / edit]]
+    FIX --> PR[[User clicks Fix with AI<br/>-> fix approved -> Create PR]]
     HITL --> METRICS[ASPM metrics endpoint]
     SKIP_F --> METRICS
 

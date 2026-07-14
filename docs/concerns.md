@@ -1,0 +1,180 @@
+---
+title: Known concerns & open risks
+source: whole repo — maintained by hand, not generated
+updated: 2026-07-15
+---
+
+# Known concerns & open risks
+
+> Things that are wrong, unproven, or deliberately deferred. Written down so they
+> are decisions rather than surprises. Each entry says what's wrong, why it
+> matters, and what fixing it costs.
+
+Ordered by "how badly would this bite us", not by area.
+
+## Security
+
+### 1. PRs are opened with a shared PAT, not the acting user's token
+`scm.py` authenticates every PR with `SENTRIQ_GIT_TOKEN` (a `repo`-scope PAT):
+
+```python
+if not config.GIT_TOKEN:
+    raise ScmError("SENTRIQ_GIT_TOKEN is not set — cannot open a PR")
+return {"Authorization": f"Bearer {config.GIT_TOKEN}", ...}
+```
+
+Every PR is therefore authored by whoever owns that PAT, no matter who clicked
+the button, and that one credential can write to every repo it can see. The
+acting user's OAuth token is **already stored** (encrypted, `repo` scope) on
+`UserProfile.github_access_token` — the PR should use it.
+
+Invisible today because there is one user and both credentials are theirs. It
+becomes a correctness *and* attribution bug the moment a second person logs in.
+
+**Fix:** thread the requesting user through `create_pr` and use their decrypted
+token in `scm`. Medium: `create_pr` is a Celery task, so it needs a `user_id`
+argument rather than `request.user`.
+
+### 2. Repository source code is sent to a third party
+Triage sends a code snippet, and fix generation sends **the whole file**
+(windowed at 12k chars) to DeepSeek's API. For private repos this is real data
+egress to a third party, and it is not disclosed anywhere in the UI.
+
+**Fix:** at minimum, say so plainly in the UI/README. Properly: a per-repo
+opt-out, and/or a self-hosted model. `LLM_ENABLED=false` already disables both
+stages if you need a hard off switch.
+
+### 3. Secrets live in `.env` next to what they protect
+`TOKEN_ENCRYPTION_KEY` encrypts the stored GitHub tokens, but sits in the same
+`.env` as `POSTGRES_PASSWORD`. Anyone who can read `.env` can read the DB *and*
+decrypt every user's GitHub token — the encryption buys nothing against that
+attacker. It only protects against a DB-only leak (a stolen dump/backup), which
+is a real but narrow threat.
+
+**Fix (prod only):** a real secret manager / KMS. `.env` is correctly gitignored
+and is fine for local dev.
+
+### 4. The DeepSeek key in `.env` is a throwaway that still needs rotating
+`SENTRIQ.md` says "DeepSeek key is a throwaway — ROTATE IT". It is still live and
+still in `.env`. It is not in git history (`.env` is untracked), so this is a
+low-grade item, but it was shared in a build context.
+
+### 5. Scanners run via the host Docker socket
+The worker mounts `/var/run/docker.sock` and `docker run`s each scanner. Anything
+that escapes a scanner container gets **root on the host**, and we run
+third-party images against untrusted repo contents. Accepted trade-off for local
+dev (it's what removed the k8s dependency); it must not ship to a shared host as
+is.
+
+### 6. No cost ceiling on "Fix with AI"
+Each click is an LLM call that clones the repo and burns tokens. Nothing rate
+limits it, per-user or globally. A held-down button is a bill.
+
+**Fix:** cheap — a per-user/per-finding throttle, or DRF's built-in
+`ScopedRateThrottle`.
+
+### 7. `SESSION_COOKIE_SECURE` defaults to false
+Correct for local HTTP dev, wrong anywhere with TLS. It is env-driven
+(`SESSION_COOKIE_SECURE=true`), so this is a deployment checklist item, not a
+code bug.
+
+## Correctness & reliability
+
+### 8. The orphan reaper only runs on worker boot
+`reap_orphaned_scans` is wired to celery's `worker_ready` signal. That covers the
+common case (worker restarts, stale rows get cleaned), but if a worker dies and
+is never restarted, scans stay `RUNNING` forever — exactly the 23-hour zombie
+that started this. Nothing reaps on a schedule.
+
+**Fix:** celery beat with a periodic schedule. Small, but adds a beat process to
+run.
+
+### 9. Redis has no persistence volume
+`deps.compose.yml` runs `redis:7-alpine` with no volume. Any `docker compose
+down`/recreate silently drops every queued task while the Postgres rows survive —
+manufacturing orphans. The reaper now catches them *after* `CELERY_TASK_TIME_LIMIT`
+(1h), but the work is still lost, silently.
+
+**Fix:** add a volume + `appendonly yes`, or accept it and rely on the reaper.
+Worth noting the failure is *silent* — no user-visible signal that a scan died.
+
+### 10. Triage is a serial LLM loop
+`_triage_and_fix` iterates findings one at a time, one blocking HTTP call each,
+against a *reasoning* model (~2-6s per call). 47 findings ≈ 47 sequential triage
+calls ≈ several minutes before the scan reports `complete` — and findings are now
+gated behind that, so the dashboard shows nothing until it's done.
+
+**Fix:** a Celery `group`/`chord` to fan triage out, or an async batch. This is
+the single biggest UX win available and it is not small.
+
+### 11. The dynamic pipeline has never completed successfully
+The only dynamic scan ever attempted (`c750ce07`) is the zombie. The `nuclei`
+image isn't even pulled locally. ZAP + nuclei adapters pass their unit
+self-tests, but the end-to-end dynamic path is **unproven**. Treat "dynamic
+works" as an unverified claim.
+
+### 12. "Edit on GitHub" only appears after a PR exists
+The button builds `https://github.dev/<owner>/<repo>/blob/<branch>/<file>#L<line>`,
+which needs the fix branch to exist on GitHub. `fix.branch` is only set inside
+`create_pr`. So the intended flow — *click Edit, land on the file with the fix
+already applied and the cursor on the line* — only works **after** Create PR.
+
+There is no way around this: you cannot pre-load a patch into Codespaces/github.dev
+via URL. The options are (a) push the branch at fix-generation time (a clone +
+push per fix — slow and litters the remote with branches), or (b) keep it
+post-PR. Currently (b), and the button is simply hidden until then.
+
+### 13. Sidebar "Create PR" picks the finding for you
+It fires PR creation for the first finding that has a fix, rather than one you
+chose. With several fixes ready, which one it picks is not obvious from the UI.
+
+**Fix:** make it open a picker, or scope it to the selected finding.
+
+### 14. The HITL surface is now dead code
+`POST /findings/{id}/hitl`, the `HitlAction` model, and `api.js`'s `hitl()` still
+exist, but no UI calls them — the approve/deny/edit gate was removed in favour of
+"clicking Fix with AI is the approval". Dead endpoints are attack surface and rot.
+
+**Fix:** delete them, or wire an explicit review step back in. Decide, don't drift.
+
+### 15. Findings are hidden until the whole scan completes
+By design (you asked for it): the list filters to
+`scan__status__in=[complete, partial, failed]`. The consequence is that a scan
+which never completes shows **nothing** — no partial results, and no explanation
+in the UI. Combined with #10, a big repo means minutes of an empty dashboard.
+
+## Testing gaps
+
+### 16. The frontend has no tests at all
+No vitest, no testing-library, no Playwright. Every frontend change in this repo
+is verified by `npm run build` succeeding — which proves imports resolve and
+nothing more. Zero assertions about behaviour.
+
+### 17. The dashboard interaction fixes were never clicked
+The dialog-race fix (stale poll reopening a closed dialog / showing the previous
+row), the tab routing, and the scroll containment are **reasoned and
+build-verified, not observed**. The Chrome extension isn't connected here, and
+headless automation dead-ends on the OAuth-gated repo picker. This is the
+weakest evidence in the repo — treat those fixes as unconfirmed until someone
+clicks through.
+
+### 18. On-demand fix generation is only mock-tested
+`test_fixapi.py` mocks `deepseek.generate_fix` and the executor. The real path
+(clone → read file → LLM → applyable diff) was verified manually against the
+live API (12/12 patches applied), but nothing automated covers it, and that
+manual run predates the on-demand task.
+
+## Architecture notes
+
+### 19. Polling, and whether SSE is worth it
+The dashboard polls 3 endpoints every 3s, plus the open finding's detail. At one
+user this is genuinely fine. **Webhooks are the wrong tool** — they're
+server→server (GitHub→us) and cannot push to a browser. **SSE is the right tool**
+for scan progress and triage/fix landing, but it forces the backend to ASGI: a
+sync gunicorn worker is pinned for the life of every open stream. Not worth it
+until there are enough concurrent users for polling to actually hurt.
+
+### 20. No real pagination on findings
+DRF `PAGE_SIZE=100` with `LimitOffsetPagination`, but the frontend requests the
+default page and renders whatever it gets. A scan with >100 findings silently
+shows only the first 100.

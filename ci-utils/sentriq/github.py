@@ -18,7 +18,10 @@ GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 GITHUB_ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
 GITHUB_API_USER_URL = "https://api.github.com/user"
 GITHUB_API_REPOS_URL = "https://api.github.com/user/repos"
-GITHUB_REVOKE_GRANT_URL = "https://api.github.com/applications/{client_id}/grant"
+# Revokes just this access token, not the whole authorization grant. The grant
+# endpoint (.../grant) would also work but forces the user through GitHub's
+# consent screen on every subsequent login for no extra security.
+GITHUB_REVOKE_TOKEN_URL = "https://api.github.com/applications/{client_id}/token"
 
 MAX_REPO_PAGES = 5
 
@@ -76,16 +79,16 @@ def github_user_info(access_token: str) -> dict:
 
 
 def revoke_token(access_token: str) -> None:
-    """Revoke a GitHub OAuth access token via the application grant API.
+    """Revoke a GitHub OAuth access token.
 
     Uses HTTP Basic authentication (client_id:client_secret). Any non-2xx
-    response (except 404, which means the grant is already gone) is logged as
-    a warning and never raised.
+    response (except 404, which means the token is already gone) is logged as
+    a warning and never raised — failing to revoke must never block logout.
     """
     if not access_token or not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
         return
 
-    url = GITHUB_REVOKE_GRANT_URL.format(client_id=GITHUB_CLIENT_ID)
+    url = GITHUB_REVOKE_TOKEN_URL.format(client_id=GITHUB_CLIENT_ID)
     try:
         response = httpx.request(
             "DELETE",
@@ -103,7 +106,7 @@ def revoke_token(access_token: str) -> None:
         return
 
     if response.status_code == 404:
-        logger.info("GitHub token grant already revoked (404)")
+        logger.info("GitHub token already revoked (404)")
         return
 
     logger.warning(

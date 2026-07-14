@@ -23,7 +23,7 @@ When a scan is enqueued, the task:
 4. Runs every adapter returned by `for_pipeline(scan.pipeline)` through `executor.run_tool`, collecting raw findings, success/failure lists, and a provenance record per adapter.
 5. Deduplicates raw findings with `deduplicate()`.
 6. Persists the final findings as `Finding` rows.
-7. If `LLM_ENABLED` is true, triages each finding with DeepSeek and, only for real findings whose severity is at least the scan's `auto_fix_severity`, generates a `FixSuggestion`. `auto_fix_severity="none"` means triage-only — it still triages.
+7. If `LLM_ENABLED` is true, triages every finding with DeepSeek. `auto_fix_severity` defaults to `"none"`, so by default **no patches are generated during a scan** — triage still runs for every finding. Patches are requested on demand via the `sentriq.generate_fix` task (see below).
 8. Finalizes the scan status as `COMPLETE`, `PARTIAL`, or `FAILED`, writes a final provenance event, and cleans up the scratch directory.
 
 This design replaces the older Kubernetes-Job dispatcher. Tools now run in-process via the executor, so there is no POST-back result API and no per-tool Kubernetes resource gating.
@@ -215,6 +215,18 @@ def _context_snippet(source: str, line, radius: int = 12) -> str:
 ```
 
 The numbered snippet must never reach fix generation: prefixing every line with `12: ` is precisely what stopped the model from producing an appliable patch. Fixes get the raw text (see [05-deepseek](05-deepseek.md)).
+
+Two tasks live alongside `run_scan`.
+
+`generate_fix_for_finding` is the on-demand path behind the UI's *Fix with AI* button. It re-clones the target, reads the file, and asks the LLM for a patch. It is idempotent — asking twice never stacks duplicate patches — and it stores the fix as `APPROVED` because the click itself is the human decision:
+
+```python
+    existing = row.fixes.first()
+    if existing:
+        return {"finding": finding_id, "status": "exists", "fix": str(existing.id)}
+```
+
+`reap_orphaned_scans` fixes a real failure mode: `run_scan` sets `status=RUNNING` up front, and its `except` only catches in-process errors. If the worker is *killed*, nothing ever marks the row failed and the UI shows "running" forever (one such row sat there for 23 hours). The reaper marks any scan stuck past `CELERY_TASK_TIME_LIMIT` as `FAILED`, and is wired to celery's `worker_ready` signal so a worker restart cleans up after the previous one's death. Note the limitation in [concerns](concerns.md#8-the-orphan-reaper-only-runs-on-worker-boot): boot-only means a worker that never comes back leaves rows stranded.
 
 Finally, the scan status is resolved, persisted, and returned:
 

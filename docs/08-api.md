@@ -9,7 +9,11 @@ source: ci-utils/sentriq/views.py, ci-utils/sentriq/serializers.py, ci-utils/sen
 
 ## Role in the pipeline
 
-The API lives at `/api/v1/` and is mounted by `ci-utils/ciutils/urls.py`. CI jobs and the web frontend call it to enqueue new scans, poll scan status, and fetch the findings produced by the executor/aggregator. The HITL endpoint is the only path that mutates triage state after a scan has finished.
+The API lives at `/api/v1/` and is mounted by `ci-utils/ciutils/urls.py`. CI jobs and the web frontend call it to enqueue new scans, poll scan status, and fetch the findings produced by the executor/aggregator.
+
+Every endpoint is `IsAuthenticated` (GitHub OAuth session cookie) and scoped to the requesting user via `scan.requested_by`. Unauthenticated calls return **401**, not DRF's default 403 — `sentriq.auth_views.auth_exception_handler` remaps `NotAuthenticated` so the SPA can tell "logged out" from "forbidden".
+
+`GET /findings` only returns findings whose scan has finished (`complete`/`partial`/`failed`). Triage runs at the end of a scan, so this is what stops half-triaged findings appearing mid-scan.
 
 ## How it works
 
@@ -25,7 +29,8 @@ All endpoints are plain Django REST Framework function-based views decorated wit
 | GET | `/api/v1/scans/<uuid:scan_id>` | Scan detail | — |
 | GET | `/api/v1/findings` | List findings | `?severity=&tool=&type=&pipeline=&verdict=&scan=` |
 | GET | `/api/v1/findings/<uuid:finding_id>` | Finding detail with triage, fixes, HITL | — |
-| POST | `/api/v1/findings/<uuid:finding_id>/hitl` | Approve / deny / edit a fix | `{action, actor?, note?, edited_diff?}` |
+| POST | `/api/v1/findings/<uuid:finding_id>/fix` | Generate an AI fix on demand (202) | — |
+| POST | `/api/v1/findings/<uuid:finding_id>/hitl` | Approve / deny / edit a fix (legacy; no UI) | `{action, actor?, note?, edited_diff?}` |
 | GET | `/api/v1/provenance` | Audit log | `?scan=`, `?finding=` |
 | GET | `/api/v1/metrics` | ASPM rollup | — |
 
@@ -86,6 +91,16 @@ Response:
     "has_fix": true
   }
 ]
+```
+
+#### POST /api/v1/findings/<id>/fix
+
+Generates an AI fix for one finding, on demand. Returns `202 Accepted` immediately and does the work in `sentriq.generate_fix`; poll the finding for the result.
+
+Nothing generates patches automatically any more (`auto_fix_severity` defaults to `"none"`), so this is the normal way a fix comes into being. The click is treated as the approval — the resulting `FixSuggestion` is stored `approved`, ready for `POST /findings/<id>/pr`. Calling it twice is safe: an existing fix is returned rather than duplicated.
+
+```json
+{"status": "queued"}
 ```
 
 #### POST /api/v1/findings/<id>/hitl

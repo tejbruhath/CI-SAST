@@ -51,6 +51,9 @@ def fake_fix(finding, file_text=""):
 executor.run_tool = fake_run_tool
 tasks.executor.run_tool = fake_run_tool
 tasks.executor.git_clone = lambda *a, **k: None
+# No broker/worker here, so the on-demand fix task would just sit in Redis.
+# Run it inline instead, so the API test actually exercises the task.
+tasks.generate_fix_for_finding.delay = tasks.generate_fix_for_finding
 deepseek.triage = fake_triage
 deepseek.generate_fix = fake_fix
 import sys  # noqa: E402
@@ -78,18 +81,14 @@ def main():
     # do NOT merge (cross-tool same-type dedup is covered by aggregator's test).
     fcount = Finding.objects.filter(scan=scan).count()
     assert fcount == 3, f"expected 3 findings, got {fcount}"
+    # Triage always runs — it is what decides real/FP/noise, and it is never
+    # gated by the auto-fix policy.
     assert Triage.objects.count() == 3, Triage.objects.count()
-    # only critical/high real findings get a fix (medium trivy does not) ->
-    # gitleaks(critical) + semgrep(high) = 2 fixes
-    assert FixSuggestion.objects.count() == 2, FixSuggestion.objects.count()
+    # auto_fix_severity defaults to "none": a scan spends triage tokens but
+    # NEVER generates patches on its own. Fixes are on-demand (see below).
+    assert scan.auto_fix_severity == "none", scan.auto_fix_severity
+    assert FixSuggestion.objects.count() == 0, FixSuggestion.objects.count()
     assert ProvenanceEvent.objects.filter(scan=scan).count() >= 5
-    # Policy: non-critical fixes are auto-approved; critical always waits for a
-    # human. So semgrep(high) is already approved, gitleaks(critical) is not.
-    assert FixSuggestion.objects.get(
-        finding__tool="semgrep").status == FixSuggestion.APPROVED
-    assert FixSuggestion.objects.get(
-        finding__tool="gitleaks").status == FixSuggestion.PROPOSED
-    assert HitlAction.objects.filter(actor="sentriq-auto").count() == 1
 
     # ---- API ----
     c = Client()
@@ -100,19 +99,18 @@ def main():
     r = c.get(f"/api/v1/findings/{fid}")
     assert r.status_code == 200 and r.json()["triage"]["verdict"] == "real"
 
-    # HITL approve
-    r = c.post(f"/api/v1/findings/{fid}/hitl",
-               data={"action": "approve", "actor": "tej"},
-               content_type="application/json")
-    assert r.status_code == 201, r.content
-    # 2 approves now: the human one above + the auto-approve from scan policy.
-    assert HitlAction.objects.filter(action="approve", actor="tej").count() == 1
-    assert HitlAction.objects.filter(action="approve").count() == 2
+    # ---- on-demand fix: the user clicking "Fix with AI" IS the approval ----
+    r = c.post(f"/api/v1/findings/{fid}/fix")
+    assert r.status_code == 202, r.content
+    fix = FixSuggestion.objects.get(finding_id=fid)
+    assert fix.status == FixSuggestion.APPROVED, fix.status
+    # Asking twice must not stack up duplicate patches.
+    c.post(f"/api/v1/findings/{fid}/fix")
+    assert FixSuggestion.objects.filter(finding_id=fid).count() == 1
 
     r = c.get("/api/v1/metrics")
     m = r.json()
-    # both fixes approved: semgrep(high) by policy, gitleaks(critical) by human.
-    assert m["totals"]["findings"] == 3 and m["totals"]["fixes_approved"] == 2, m
+    assert m["totals"]["findings"] == 3 and m["totals"]["fixes_approved"] == 1, m
 
     r = c.get(f"/api/v1/provenance?scan={scan.id}")
     assert r.status_code == 200 and len(r.json()) >= 5

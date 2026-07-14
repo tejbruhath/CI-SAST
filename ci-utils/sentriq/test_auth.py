@@ -53,7 +53,9 @@ class AuthTests(TestCase):
         mock_request.assert_called_once()
         args, kwargs = mock_request.call_args
         self.assertEqual(args[0], "DELETE")
-        self.assertIn("/applications/test_client_id/grant", args[1])
+        # /token revokes just this token; /grant would drop the whole
+        # authorization and force a consent screen on every login.
+        self.assertIn("/applications/test_client_id/token", args[1])
         self.assertEqual(kwargs["auth"], ("test_client_id", "test_secret"))
         self.assertEqual(kwargs["json"], {"access_token": "gho_fake_token"})
 
