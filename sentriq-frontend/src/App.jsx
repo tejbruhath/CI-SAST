@@ -1,43 +1,144 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api.js";
-import MetricsPanel from "./components/MetricsPanel.jsx";
-import ScanForm from "./components/ScanForm.jsx";
+
+import LoginPage from "./components/LoginPage.jsx";
+import RepoBrowser from "./components/RepoBrowser.jsx";
+import Sidebar from "./components/Sidebar.jsx";
+import Header from "./components/Header.jsx";
+import ScanConfigForm from "./components/ScanConfigForm.jsx";
 import ScansList from "./components/ScansList.jsx";
+import QueueStatus from "./components/QueueStatus.jsx";
 import FindingsTable from "./components/FindingsTable.jsx";
 import FindingDetail from "./components/FindingDetail.jsx";
 
-const POLL_MS = 5000;
+const POLL_MS = 3000;
 
 export default function App() {
-  const [metrics, setMetrics] = useState(null);
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState(null);
+
+  const [repos, setRepos] = useState([]);
+  const [reposLoading, setReposLoading] = useState(false);
+  const [selectedRepo, setSelectedRepo] = useState(null);
+
   const [scans, setScans] = useState([]);
   const [findings, setFindings] = useState([]);
   const [filters, setFilters] = useState({ scan: "", severity: "", tool: "", verdict: "" });
-  const [selected, setSelected] = useState(null);   // finding detail (full object)
+  const [selectedFinding, setSelectedFinding] = useState(null);
+  const [queue, setQueue] = useState({ queue_depth: 0, active_tasks: 0 });
+
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
 
-  const refresh = useCallback(async () => {
+  // -------------------------------------------------------------------------
+  // Auth
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const loginStatus = params.get("login");
+    if (loginStatus === "success") {
+      // OAuth callback redirected back here; clear the query string and refresh.
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
+    api.auth
+      .me()
+      .then(setUser)
+      .catch(() => setUser(null))
+      .finally(() => setAuthLoading(false));
+  }, []);
+
+  const login = async () => {
+    setAuthLoading(true);
+    setAuthError(null);
     try {
-      const [m, s, f] = await Promise.all([
-        api.metrics(), api.scans(), api.findings(filters),
+      const data = await api.auth.loginWithGitHub();
+      if (data?.url) {
+        window.location.href = data.url;
+        return;
+      }
+      // Mock mode returns the user directly.
+      setUser(data);
+    } catch (e) {
+      setAuthError(e.message);
+      setAuthLoading(false);
+    }
+  };
+
+  const logout = async () => {
+    await api.auth.logout();
+    setUser(null);
+    setSelectedRepo(null);
+    setSelectedFinding(null);
+    setScans([]);
+    setFindings([]);
+    setRepos([]);
+  };
+
+  // -------------------------------------------------------------------------
+  // Repos
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (!user) return;
+    setReposLoading(true);
+    api.repos
+      .list()
+      .then(setRepos)
+      .catch((e) => setErr(e.message))
+      .finally(() => setReposLoading(false));
+  }, [user]);
+
+  // -------------------------------------------------------------------------
+  // Dashboard data refresh
+  // -------------------------------------------------------------------------
+  const refresh = useCallback(async () => {
+    if (!selectedRepo) return;
+    try {
+      const repoName = selectedRepo.full_name;
+      const [s, f, q] = await Promise.all([
+        api.scans.list(repoName),
+        api.findings.list({ ...filters, repo: repoName }),
+        api.queue.status(),
       ]);
-      setMetrics(m); setScans(s); setFindings(f); setErr(null);
+      setScans(s);
+      setFindings(f);
+      setQueue(q);
+      setErr(null);
+
+      // Refresh selected finding if drawer is open
+      if (selectedFinding) {
+        const updated = f.find((x) => x.id === selectedFinding.id);
+        if (updated) setSelectedFinding(updated);
+      }
     } catch (e) {
       setErr(e.message);
     }
-  }, [filters]);
+  }, [selectedRepo, filters, selectedFinding?.id]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
   useEffect(() => {
     const t = setInterval(refresh, POLL_MS);
     return () => clearInterval(t);
   }, [refresh]);
 
-  const submitScan = async (pipeline, target, ref) => {
+  // -------------------------------------------------------------------------
+  // Actions
+  // -------------------------------------------------------------------------
+  const submitScan = async ({ pipeline, target, ref, tools, auto_fix_severity }) => {
     setBusy(true);
     try {
-      await api.createScan(pipeline, target, ref);
+      const actualTarget = pipeline === "static" ? selectedRepo?.clone_url : target || "https://staging.example.com";
+      await api.scans.create({
+        pipeline,
+        target: actualTarget,
+        ref,
+        tools,
+        auto_fix_severity,
+      });
       await refresh();
     } catch (e) {
       setErr(e.message);
@@ -47,71 +148,124 @@ export default function App() {
   };
 
   const openFinding = async (id) => {
-    try { setSelected(await api.finding(id)); }
-    catch (e) { setErr(e.message); }
+    try {
+      const f = await api.findings.get(id);
+      setSelectedFinding(f);
+    } catch (e) {
+      setErr(e.message);
+    }
   };
 
-  // While a PR is being created, poll the open finding until it lands.
-  useEffect(() => {
-    const creating = selected?.fixes?.some((f) => f.pr_status === "creating");
-    if (!creating) return;
-    const t = setInterval(() => openFinding(selected.id), 4000);
-    return () => clearInterval(t);
-  }, [selected]);
-
   const doHitl = async (id, action, note) => {
-    await api.hitl(id, action, "reviewer", note, null);
-    await openFinding(id);   // reload detail
-    refresh();
+    try {
+      await api.findings.hitl(id, action, user?.login || "reviewer", note, null);
+      await refresh();
+      if (selectedFinding?.id === id) {
+        const f = await api.findings.get(id);
+        setSelectedFinding(f);
+      }
+    } catch (e) {
+      setErr(e.message);
+    }
   };
 
   const doCreatePr = async (id) => {
-    await api.createPr(id);
-    await openFinding(id);   // reflect pr_status=creating; polling updates to open
+    try {
+      await api.findings.createPr(id);
+      await refresh();
+      if (selectedFinding?.id === id) {
+        const f = await api.findings.get(id);
+        setSelectedFinding(f);
+      }
+    } catch (e) {
+      setErr(e.message);
+    }
   };
 
+  // -------------------------------------------------------------------------
+  // Render
+  // -------------------------------------------------------------------------
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background text-on-surface">
+        <div className="flex flex-col items-center gap-4">
+          <span className="material-symbols-outlined text-4xl text-primary animate-spin">sync</span>
+          <span className="font-code-label text-code-label uppercase">Loading security console...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+      return (
+        <LoginPage
+          onLogin={login}
+          loading={authLoading}
+        />
+      );
+  }
+
+  if (!selectedRepo) {
+    return <RepoBrowser repos={repos} loading={reposLoading} user={user} onSelectRepo={setSelectedRepo} onLogout={logout} />;
+  }
+
   return (
-    <div className="app">
-      <div className="topbar">
-        <div className="brand">
-          <h1>Sentriq<span className="dot">.</span></h1>
-          <span className="tag">AI security remediation · SAST · SCA · DAST</span>
-        </div>
-        <button className="ghost" onClick={refresh}>Refresh</button>
-      </div>
+    <div className="min-h-screen flex bg-background text-on-background font-body-md text-body-md relative overflow-hidden">
+      <div className="scanline-overlay absolute inset-0 z-0" />
+      <div
+        className="absolute inset-0 pointer-events-none opacity-20 z-0"
+        style={{
+          backgroundImage: "radial-gradient(circle at center, #8c909f 1px, transparent 1px)",
+          backgroundSize: "8px 8px",
+        }}
+      />
 
-      {err && <div className="err">{err}</div>}
+      <Sidebar user={user} activeTab="dashboard" onLogout={logout} />
 
-      <MetricsPanel metrics={metrics} />
+      <main className="flex-1 flex flex-col min-w-0 pl-64 z-10 relative">
+        <Header repo={selectedRepo} user={user} onLogout={logout} />
 
-      <div className="grid">
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          <div className="panel">
-            <h2>New scan</h2>
-            <ScanForm onSubmit={submitScan} busy={busy} />
+        {err && (
+          <div className="mx-6 mt-6 bg-error-container border-2 border-error text-on-error-container p-3 font-body-md">
+            {err}
           </div>
-          <div className="panel">
-            <h2>Recent scans</h2>
-            <ScansList scans={scans} activeScan={filters.scan}
-              onPick={(id) => setFilters({ ...filters, scan: filters.scan === id ? "" : id })} />
+        )}
+
+        <div className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-auto">
+          {/* Left column */}
+          <div className="col-span-1 flex flex-col gap-6">
+            <ScanConfigForm repo={selectedRepo} onSubmit={submitScan} busy={busy} />
+            <ScansList
+              scans={scans}
+              activeScan={filters.scan}
+              onPick={(id) => setFilters({ ...filters, scan: filters.scan === id ? "" : id })}
+            />
+          </div>
+
+          {/* Right column */}
+          <div className="col-span-1 lg:col-span-2 flex flex-col gap-6">
+            <QueueStatus queue={queue} />
+            <FindingsTable
+              findings={findings}
+              filters={filters}
+              setFilters={setFilters}
+              onPick={openFinding}
+              selected={selectedFinding?.id}
+              onCreatePr={doCreatePr}
+              busy={busy}
+            />
           </div>
         </div>
+      </main>
 
-        <div className="panel">
-          <h2>
-            Findings{filters.scan ? " · filtered by scan" : ""}
-            <span style={{ float: "right", color: "var(--muted)", fontWeight: 400 }}>
-              {findings.length} shown
-            </span>
-          </h2>
-          <FindingsTable findings={findings} filters={filters} setFilters={setFilters}
-            onPick={openFinding} selected={selected?.id} />
-        </div>
-      </div>
-
-      {selected && (
-        <FindingDetail finding={selected} onClose={() => setSelected(null)}
-          onHitl={doHitl} onCreatePr={doCreatePr} />
+      {selectedFinding && (
+        <FindingDetail
+          finding={selectedFinding}
+          onClose={() => setSelectedFinding(null)}
+          onHitl={doHitl}
+          onCreatePr={doCreatePr}
+          busy={busy}
+        />
       )}
     </div>
   );

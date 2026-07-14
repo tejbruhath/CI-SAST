@@ -1,26 +1,27 @@
-function statusColor(s) {
-  return {
-    complete: "var(--ok)", partial: "var(--med)", failed: "var(--crit)",
-    running: "var(--accent)", queued: "var(--muted)",
-  }[s] || "var(--muted)";
-}
+import ScanCard from "./ScanCard.jsx";
 
-export default function ScansList({ scans, onPick, activeScan }) {
-  if (!scans.length) return <div className="spinner">No scans yet.</div>;
+export default function ScansList({ scans, activeScan, onPick }) {
+  if (!scans.length) {
+    return (
+      <div className="border-2 border-outline-variant bg-surface-container p-6 text-center">
+        <p className="font-body-md text-body-md text-on-surface-variant">No scans yet.</p>
+      </div>
+    );
+  }
+
   return (
-    <div>
-      {scans.map((s) => (
-        <div key={s.id} className="scan-row" onClick={() => onPick(s.id)}
-          style={activeScan === s.id ? { color: "var(--accent)" } : undefined}>
-          <div className="t" title={s.target}>
-            <span className="badge tool" style={{ marginRight: 6 }}>{s.pipeline}</span>
-            {s.target.replace(/^https?:\/\//, "")}
-          </div>
-          <div className="s" style={{ color: statusColor(s.status) }}>
-            {s.status} · {s.finding_count}
-          </div>
-        </div>
-      ))}
-    </div>
+    <section className="bg-surface border-2 border-outline flex flex-col h-full min-h-[250px]">
+      <div className="p-4 border-b-2 border-outline bg-surface-container-low flex justify-between items-center">
+        <h2 className="font-headline-sm text-headline-sm text-on-surface uppercase tracking-tight flex items-center gap-2">
+          <span className="material-symbols-outlined text-primary">history</span>
+          Recent Scans
+        </h2>
+      </div>
+      <div className="p-4 flex flex-col gap-4 overflow-y-auto">
+        {scans.map((s) => (
+          <ScanCard key={s.id} scan={s} active={activeScan === s.id} onClick={() => onPick(s.id)} />
+        ))}
+      </div>
+    </section>
   );
 }

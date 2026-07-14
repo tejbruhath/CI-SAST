@@ -1,0 +1,40 @@
+# Sentriq — development dependencies only.
+# Run backend + worker + frontend from your terminal, and spin up just Postgres
+# and Redis with this file.
+#
+#   docker compose -f deps.compose.yml up -d
+#
+# Then in separate terminals:
+#   cd ci-utils && python manage.py runserver 0.0.0.0:8080
+#   cd ci-utils && celery -A ciutils worker --loglevel=info --concurrency=2
+#   cd sentriq-frontend && npm run dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sentriq}
+      POSTGRES_USER: ${POSTGRES_USER:-sentriq}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sentriq}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sentriq}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

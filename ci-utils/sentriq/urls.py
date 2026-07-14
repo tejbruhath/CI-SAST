@@ -1,9 +1,16 @@
 from django.urls import path
 
-from . import views
+from . import auth_views, repos_views, views
 
 urlpatterns = [
     path("health", views.health),
+    path("auth/github", auth_views.github_auth),
+    path("auth/github/callback", auth_views.github_callback),
+    path("auth/me", auth_views.me),
+    path("auth/logout", auth_views.logout_view),
+    path("csrf", auth_views.csrf_token),
+    path("repos", repos_views.repos),
+    path("queue", views.queue_status),
     path("scans", views.scans),
     path("scans/<uuid:scan_id>", views.scan_detail),
     path("findings", views.findings),

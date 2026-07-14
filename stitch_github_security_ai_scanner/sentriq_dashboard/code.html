@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SENTRIQ - Dashboard</title>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500;700&amp;family=Space+Grotesk:wght@600;700;900&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Config injected from Design System -->
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-primary": "#002d6c",
+                    "surface-container": "#1a1f2d",
+                    "inverse-on-surface": "#2b303e",
+                    "on-primary-fixed-variant": "#004398",
+                    "surface-container-high": "#252a37",
+                    "on-background": "#dee2f5",
+                    "outline": "#8c909f",
+                    "tertiary-fixed": "#ffdcc2",
+                    "on-secondary-container": "#b5b8c4",
+                    "on-primary-container": "#00275f",
+                    "on-error-container": "#ffdad6",
+                    "on-tertiary-fixed": "#2e1500",
+                    "on-surface-variant": "#c2c6d6",
+                    "on-secondary": "#2c303a",
+                    "on-tertiary": "#4d2700",
+                    "secondary": "#c3c6d3",
+                    "primary-fixed-dim": "#afc6ff",
+                    "secondary-fixed-dim": "#c3c6d3",
+                    "tertiary-fixed-dim": "#ffb77b",
+                    "on-tertiary-container": "#432100",
+                    "primary-container": "#528dff",
+                    "on-secondary-fixed-variant": "#434751",
+                    "on-error": "#690005",
+                    "error": "#ffb4ab",
+                    "error-container": "#93000a",
+                    "on-primary-fixed": "#001a43",
+                    "background": "#0e1320",
+                    "inverse-primary": "#0059c6",
+                    "outline-variant": "#424753",
+                    "secondary-fixed": "#dfe2ef",
+                    "surface-tint": "#afc6ff",
+                    "on-surface": "#dee2f5",
+                    "tertiary-container": "#d87802",
+                    "surface-bright": "#343947",
+                    "on-tertiary-fixed-variant": "#6d3a00",
+                    "tertiary": "#ffb77b",
+                    "primary": "#afc6ff",
+                    "on-secondary-fixed": "#181c25",
+                    "surface-container-low": "#161b28",
+                    "surface-variant": "#2f3443",
+                    "surface-container-highest": "#2f3443",
+                    "surface-dim": "#0e1320",
+                    "inverse-surface": "#dee2f5",
+                    "surface-container-lowest": "#090e1b",
+                    "primary-fixed": "#d9e2ff",
+                    "secondary-container": "#454953",
+                    "surface": "#0e1320"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "border-width-thick": "2px",
+                    "border-width-thin": "1px",
+                    "margin-mobile": "16px",
+                    "gutter": "16px",
+                    "unit": "4px",
+                    "margin-desktop": "24px"
+            },
+            "fontFamily": {
+                    "body-sm": ["Inter"],
+                    "code-label": ["JetBrains Mono"],
+                    "headline-md": ["Space Grotesk"],
+                    "headline-sm": ["Space Grotesk"],
+                    "display-lg": ["Space Grotesk"],
+                    "body-md": ["Inter"],
+                    "headline-lg-mobile": ["Space Grotesk"]
+            },
+            "fontSize": {
+                    "body-sm": ["12px", {"lineHeight": "1.4", "fontWeight": "400"}],
+                    "code-label": ["12px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                    "headline-md": ["24px", {"lineHeight": "1.2", "fontWeight": "600"}],
+                    "headline-sm": ["18px", {"lineHeight": "1.2", "fontWeight": "600"}],
+                    "display-lg": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "body-md": ["14px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                    "headline-lg-mobile": ["32px", {"lineHeight": "1.2", "fontWeight": "700"}]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        /* Neo-Brutalist Scanline Texture */
+        .scanlines {
+            background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.1));
+            background-size: 100% 4px;
+        }
+        /* Animated Striped Progress Bar */
+        @keyframes progress-stripes {
+            from { background-position: 1rem 0; }
+            to { background-position: 0 0; }
+        }
+        .progress-striped {
+            background-image: linear-gradient(45deg, rgba(255, 255, 255, 0.15) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.15) 75%, transparent 75%, transparent);
+            background-size: 1rem 1rem;
+            animation: progress-stripes 1s linear infinite;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen flex selection:bg-primary selection:text-on-primary font-body-md relative overflow-hidden">
+<!-- Atmospheric Dot Grid -->
+<div class="absolute inset-0 pointer-events-none opacity-20" style="background-image: radial-gradient(circle at center, #8c909f 1px, transparent 1px); background-size: 8px 8px;"></div>
+<div class="absolute inset-0 pointer-events-none scanlines z-0"></div>
+<!-- SideNavBar (from JSON) -->
+<nav class="fixed left-0 top-0 h-full flex flex-col border-r-4 border-primary bg-surface z-40 w-64">
+<div class="p-6 border-b-2 border-outline">
+<h1 class="font-headline-md font-black text-2xl text-primary uppercase tracking-tighter">SENTRIQ</h1>
+<p class="font-code-label text-code-label text-outline mt-1 uppercase">v2.4.0-PRO</p>
+</div>
+<div class="flex-1 py-4 flex flex-col gap-2 overflow-y-auto px-2">
+<!-- Active Tab -->
+<a class="bg-primary-fixed text-primary border-2 border-primary flex items-center p-3 font-black transition-transform active:scale-95" href="#">
+<span class="material-symbols-outlined mr-3" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+<span class="font-body-sm font-bold uppercase text-sm">Dashboard</span>
+</a>
+<!-- Inactive Tabs -->
+<a class="text-primary flex items-center p-3 border-2 border-transparent hover:border-primary hover:bg-surface-container-highest transition-all active:scale-95" href="#">
+<span class="material-symbols-outlined mr-3">settings_input_component</span>
+<span class="font-body-sm font-bold uppercase text-sm">Scan Config</span>
+</a>
+<a class="text-primary flex items-center p-3 border-2 border-transparent hover:border-primary hover:bg-surface-container-highest transition-all active:scale-95" href="#">
+<span class="material-symbols-outlined mr-3">history</span>
+<span class="font-body-sm font-bold uppercase text-sm">Recent Scans</span>
+</a>
+<a class="text-primary flex items-center p-3 border-2 border-transparent hover:border-primary hover:bg-surface-container-highest transition-all active:scale-95" href="#">
+<span class="material-symbols-outlined mr-3">inventory_2</span>
+<span class="font-body-sm font-bold uppercase text-sm">Assets</span>
+</a>
+</div>
+<div class="p-4 border-t-2 border-outline flex flex-col gap-2">
+<button class="w-full bg-primary text-on-primary border-2 border-primary font-code-label font-bold py-2 uppercase hover:bg-inverse-primary hover:text-white transition-colors">
+                START NEW SCAN
+            </button>
+</div>
+<div class="px-2 pb-4 pt-2 border-t-2 border-outline flex flex-col gap-1">
+<a class="text-outline flex items-center p-2 border-2 border-transparent hover:border-outline transition-all text-xs font-code-label uppercase" href="#">
+<span class="material-symbols-outlined mr-2 text-[18px]">description</span> Docs
+            </a>
+<a class="text-error flex items-center p-2 border-2 border-transparent hover:border-error transition-all text-xs font-code-label uppercase" href="#">
+<span class="material-symbols-outlined mr-2 text-[18px]">logout</span> Logout
+            </a>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="flex-1 flex flex-col min-w-0 pl-64 z-10 relative">
+<!-- Header -->
+<header class="h-16 border-b-2 border-outline bg-surface-container-low px-6 flex items-center justify-between sticky top-0 z-20">
+<div class="flex items-center gap-2 font-code-label text-code-label text-on-surface-variant">
+<span class="material-symbols-outlined text-[18px]">folder</span>
+<span>Repos</span>
+<span class="text-outline">/</span>
+<span class="text-primary font-bold">tejbruhath/CI-SAST</span>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-3 pl-4 border-l-2 border-outline">
+<img alt="User Avatar" class="w-8 h-8 border-2 border-primary object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuARsAfJ2QBUOH2YPhguwCAlmOfBGTL7KLYvzYIRZuN-KHkmCW4Ii4JBAXk4xHXcRDXRexTLo4NFsOEyt2PPfyBZQnpK7Qh2kThPBkRaddRk2m8yf_O_n7K0qP8B7KUjeZzB64crnAkFDTtGsHBUGY7V_2UYY1sDDJLauGXCIHe_OXBZpJW6a6eZwuivFvsTwR6ewvF6lcFSw61l1ezuByJ4rgRP5Xd6RhEZ-xadZ14xVcMB8TsLlgrIbdFigg8zpfyqIEQ-rXm3EkjB"/>
+<button class="material-symbols-outlined text-outline hover:text-error transition-colors" title="Logout">logout</button>
+</div>
+</div>
+</header>
+<!-- Dashboard Layout -->
+<div class="flex-1 p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-auto">
+<!-- Left Column: 1/3 -->
+<div class="col-span-1 flex flex-col gap-6">
+<!-- Scan Config Form -->
+<section class="bg-surface border-2 border-outline p-5 flex flex-col gap-5 relative group">
+<div class="absolute inset-0 border-2 border-primary opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface uppercase tracking-tight flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">settings</span>
+                        Scan Configuration
+                    </h2>
+<!-- Segmented Control -->
+<div class="flex border-2 border-outline font-code-label text-code-label uppercase">
+<button class="flex-1 py-2 bg-primary text-on-primary font-bold text-center border-r-2 border-outline hover:bg-inverse-primary hover:text-white transition-colors">STATIC</button>
+<button class="flex-1 py-2 bg-surface text-on-surface text-center hover:bg-surface-container-highest transition-colors">DYNAMIC</button>
+</div>
+<!-- Tools Grid -->
+<div class="space-y-2">
+<label class="font-code-label text-code-label text-outline uppercase block">Select Tools</label>
+<div class="grid grid-cols-2 gap-2 font-code-label text-code-label">
+<label class="flex items-center gap-2 p-2 border-2 border-primary bg-primary/10 cursor-pointer text-primary">
+<input checked="" class="accent-primary w-4 h-4 rounded-none bg-background border-2 border-primary" type="checkbox"/> gitleaks
+                            </label>
+<label class="flex items-center gap-2 p-2 border-2 border-primary bg-primary/10 cursor-pointer text-primary">
+<input checked="" class="accent-primary w-4 h-4 rounded-none bg-background border-2 border-primary" type="checkbox"/> semgrep
+                            </label>
+<label class="flex items-center gap-2 p-2 border-2 border-outline bg-surface-container cursor-pointer text-on-surface hover:border-primary transition-colors">
+<input class="accent-primary w-4 h-4 rounded-none bg-background border-2 border-outline" type="checkbox"/> trivy
+                            </label>
+</div>
+</div>
+<!-- Branch Input -->
+<div class="space-y-2">
+<label class="font-code-label text-code-label text-outline uppercase block">Target Branch</label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-2.5 text-outline text-[18px]">call_split</span>
+<input class="w-full bg-background border-2 border-outline text-on-surface font-code-label text-code-label py-2 pl-9 pr-3 focus:outline-none focus:border-primary focus:ring-0 transition-colors" type="text" value="main"/>
+</div>
+</div>
+<!-- Auto-fix -->
+<div class="space-y-2">
+<label class="font-code-label text-code-label text-outline uppercase block">Auto-fix Policy</label>
+<select class="w-full bg-background border-2 border-outline text-on-surface font-code-label text-code-label py-2 px-3 focus:outline-none focus:border-primary focus:ring-0 appearance-none rounded-none">
+<option>High and above</option>
+<option>Critical only</option>
+<option>None</option>
+</select>
+</div>
+<!-- HITL Note -->
+<div class="bg-error-container border-2 border-error p-3 flex gap-3 items-start">
+<span class="material-symbols-outlined text-error text-[20px] mt-0.5">warning</span>
+<p class="font-code-label text-[11px] text-error leading-tight uppercase">HITL REQUIRED: Critical findings always require human approval before auto-remediation.</p>
+</div>
+<button class="mt-2 w-full bg-primary text-on-primary border-2 border-primary font-headline-sm text-headline-sm py-3 uppercase hover:bg-inverse-primary hover:text-white transition-all active:translate-y-1">
+                        RUN SCAN
+                    </button>
+</section>
+<!-- Recent Scans Panel -->
+<section class="bg-surface border-2 border-outline flex flex-col h-full min-h-[250px]">
+<div class="p-4 border-b-2 border-outline bg-surface-container-low flex justify-between items-center">
+<h2 class="font-headline-sm text-headline-sm text-on-surface uppercase tracking-tight flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">history</span>
+                            Recent Scans
+                        </h2>
+</div>
+<div class="p-4 flex flex-col gap-4">
+<!-- Scan Card -->
+<div class="border-2 border-outline bg-background p-3 relative overflow-hidden group hover:border-primary transition-colors">
+<div class="flex justify-between items-start mb-3">
+<div>
+<span class="font-code-label text-[10px] bg-secondary-container text-on-surface px-1 uppercase border border-outline">STATIC PIPELINE</span>
+<p class="font-body-sm text-body-sm text-on-surface font-bold mt-1 group-hover:text-primary transition-colors">tejbruhath/CI-SAST</p>
+</div>
+<span class="font-code-label text-code-label text-primary flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] animate-spin">sync</span> Running
+                                </span>
+</div>
+<!-- Animated Striped Progress Bar -->
+<div class="h-4 w-full border-2 border-outline bg-surface-container relative">
+<div class="h-full bg-primary progress-striped w-[33%] border-r-2 border-outline"></div>
+<span class="absolute inset-0 flex items-center justify-center font-code-label text-[10px] text-on-surface mix-blend-difference font-bold">33%</span>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- Right Column: 2/3 -->
+<div class="col-span-1 lg:col-span-2 flex flex-col gap-6">
+<!-- Global Queue Status -->
+<div class="bg-surface-container border-2 border-outline p-4 flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-3 h-3 bg-primary rounded-none border border-black animate-pulse"></div>
+<p class="font-code-label text-code-label text-on-surface uppercase tracking-wide">
+                            SYSTEM STATUS: <span class="text-primary font-bold">2 scans in queue</span> <span class="text-outline mx-2">·</span> 1 tool running
+                        </p>
+</div>
+<span class="material-symbols-outlined text-outline">dns</span>
+</div>
+<!-- Findings Table -->
+<section class="bg-surface border-2 border-outline flex-1 flex flex-col">
+<div class="p-4 border-b-2 border-outline bg-surface-container-low flex justify-between items-center">
+<h2 class="font-headline-sm text-headline-sm text-on-surface uppercase tracking-tight flex items-center gap-2">
+<span class="material-symbols-outlined text-error">bug_report</span>
+                            Live Findings
+                        </h2>
+<button class="font-code-label text-[11px] text-outline border-2 border-outline px-2 py-1 uppercase hover:text-primary hover:border-primary transition-colors">Export CSV</button>
+</div>
+<div class="overflow-x-auto flex-1">
+<table class="w-full text-left border-collapse font-body-sm text-body-sm">
+<thead>
+<tr class="bg-surface-container font-code-label text-code-label text-outline uppercase border-b-2 border-outline">
+<th class="p-3 border-r-2 border-outline font-medium">Tool</th>
+<th class="p-3 border-r-2 border-outline font-medium">Severity</th>
+<th class="p-3 border-r-2 border-outline font-medium">Type</th>
+<th class="p-3 border-r-2 border-outline font-medium">File / Line</th>
+<th class="p-3 font-medium">Status</th>
+</tr>
+</thead>
+<tbody class="text-on-surface">
+<tr class="border-b border-outline hover:bg-surface-container-highest transition-colors">
+<td class="p-3 border-r-2 border-outline font-code-label">gitleaks</td>
+<td class="p-3 border-r-2 border-outline">
+<span class="inline-block bg-error text-on-error font-code-label text-[10px] px-2 py-0.5 border border-on-error uppercase font-bold animate-[pulse_2s_ease-in-out_infinite]">CRITICAL</span>
+</td>
+<td class="p-3 border-r-2 border-outline text-on-surface-variant">Hardcoded AWS Key</td>
+<td class="p-3 border-r-2 border-outline font-code-label text-outline">config/prod.yml:14</td>
+<td class="p-3 text-error font-bold font-code-label text-xs uppercase">Unresolved</td>
+</tr>
+<tr class="border-b border-outline hover:bg-surface-container-highest transition-colors">
+<td class="p-3 border-r-2 border-outline font-code-label">semgrep</td>
+<td class="p-3 border-r-2 border-outline">
+<span class="inline-block bg-tertiary-container text-on-tertiary-container font-code-label text-[10px] px-2 py-0.5 border border-on-tertiary-container uppercase font-bold">HIGH</span>
+</td>
+<td class="p-3 border-r-2 border-outline text-on-surface-variant">SQL Injection Risk</td>
+<td class="p-3 border-r-2 border-outline font-code-label text-outline">src/db/query.js:42</td>
+<td class="p-3 text-tertiary font-bold font-code-label text-xs uppercase">Pending Review</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</div>
+</div>
+</main>
+</body></html>

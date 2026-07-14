@@ -4,7 +4,7 @@ import os
 # ---- scan execution ----------------------------------------------------------
 # Shared data root. MUST be bind-mounted at the identical path host<->worker so
 # nested `docker run -v` paths resolve on the host daemon (see executor.py).
-SENTRIQ_DATA_DIR = os.getenv("SENTRIQ_DATA_DIR", "/data")
+SENTRIQ_DATA_DIR = os.getenv("SENTRIQ_DATA_DIR") or os.getenv("HOST_DATA_DIR", "/data")
 REPOS_DIR = os.path.join(SENTRIQ_DATA_DIR, "repos")
 
 CLONE_TIMEOUT_SECONDS = int(os.getenv("CLONE_TIMEOUT_SECONDS", "300"))

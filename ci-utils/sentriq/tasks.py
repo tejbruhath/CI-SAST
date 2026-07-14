@@ -23,7 +23,7 @@ from . import config, executor
 from .adapters import for_pipeline
 from .aggregator import deduplicate
 from .schema import SEV_SCORE, STATIC, summarize
-from .models import Scan, Finding, Triage, FixSuggestion, ProvenanceEvent
+from .models import Scan, Finding, Triage, FixSuggestion, HitlAction, ProvenanceEvent
 
 logger = logging.getLogger("sentriq.tasks")
 
@@ -48,9 +48,12 @@ def _context_snippet(repo_dir: str, rel_file, line, radius: int = 12) -> str:
 
 
 def _run_tools(scan: Scan, work_dir: str):
-    """Run every adapter for the scan's pipeline; return (findings, done, failed)."""
+    """Run the adapters selected for this scan; return (findings, done, failed)."""
     findings, done, failed = [], [], []
+    allowed_tools = set(scan.selected_tools or [a.NAME for a in for_pipeline(scan.pipeline)])
     for adapter in for_pipeline(scan.pipeline):
+        if adapter.NAME not in allowed_tools:
+            continue
         run = executor.run_tool(adapter, scan.target, work_dir,
                                 timeout=config.TOOL_TIMEOUT_SECONDS)
         if run.ok:
@@ -93,7 +96,11 @@ def _triage_and_fix(scan: Scan, rows, work_dir: str) -> None:
     # imported here so tool-only runs don't require httpx at import time
     from . import deepseek
 
-    fix_floor = SEV_SCORE.get(config.FIX_MIN_SEVERITY, 3)
+    if scan.auto_fix_severity == "none":
+        logger.info("[%s] auto-fix disabled; skipping fix generation", scan.id)
+        return
+
+    fix_floor = SEV_SCORE.get(scan.auto_fix_severity, 3)
     for row in rows:
         snippet = _context_snippet(work_dir, row.file, row.line)
         t = deepseek.triage(_finding_dict(row), snippet)
@@ -104,13 +111,21 @@ def _triage_and_fix(scan: Scan, rows, work_dir: str) -> None:
         ProvenanceEvent.record(ProvenanceEvent.TRIAGE, f"triaged: {t.verdict}",
                                scan=scan, finding=row, verdict=t.verdict,
                                confidence=t.confidence)
-        # Only spend fix-generation tokens on real, high-severity findings.
+        # Only spend fix-generation tokens on real findings at/above the policy.
         if t.verdict == Triage.REAL and row.severity_score >= fix_floor:
             fx = deepseek.generate_fix(_finding_dict(row), snippet)
             if fx.ok:
-                FixSuggestion.objects.create(
+                fix = FixSuggestion.objects.create(
                     finding=row, diff=fx.diff, explanation=fx.explanation,
                     model=config.DEEPSEEK_MODEL)
+                # Auto-approve non-critical fixes so PR can be created without HITL.
+                if row.severity != "critical":
+                    fix.status = FixSuggestion.APPROVED
+                    fix.save(update_fields=["status"])
+                    HitlAction.objects.create(
+                        finding=row, action=HitlAction.APPROVE,
+                        actor="sentriq-auto",
+                        note=f"Auto-approved per scan policy (>= {scan.auto_fix_severity})")
                 ProvenanceEvent.record(ProvenanceEvent.FIX, "fix generated",
                                        scan=scan, finding=row)
 
@@ -189,7 +204,8 @@ def create_pr(fix_id: str) -> dict:
 def run_scan(scan_id: str) -> dict:
     scan = Scan.objects.get(id=scan_id)
     scan.status = Scan.RUNNING
-    scan.tools_requested = [a.NAME for a in for_pipeline(scan.pipeline)]
+    if not scan.tools_requested:
+        scan.tools_requested = [a.NAME for a in for_pipeline(scan.pipeline)]
     scan.save(update_fields=["status", "tools_requested"])
     ProvenanceEvent.record(ProvenanceEvent.SCAN, "scan started", scan=scan,
                            pipeline=scan.pipeline, target=scan.target)

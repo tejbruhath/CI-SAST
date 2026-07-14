@@ -11,6 +11,7 @@ Maps the architecture's persistent stores onto Django models:
 """
 import uuid
 
+from django.conf import settings
 from django.db import models
 
 from .schema import STATIC, DYNAMIC, PIPELINES, SEVERITIES
@@ -27,6 +28,11 @@ class Scan(models.Model):
     target = models.TextField()
     ref = models.CharField(max_length=200, default="HEAD", blank=True)
     status = models.CharField(max_length=12, choices=STATUS, default=QUEUED)
+    selected_tools = models.JSONField(default=list, blank=True)
+    auto_fix_severity = models.CharField(max_length=10, default="high", blank=True)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="scans")
     tools_requested = models.JSONField(default=list)
     tools_done = models.JSONField(default=list)
     tools_failed = models.JSONField(default=list)
@@ -148,3 +154,18 @@ class ProvenanceEvent(models.Model):
     def record(cls, stage, event, scan=None, finding=None, **payload):
         return cls.objects.create(stage=stage, event=event, scan=scan,
                                   finding=finding, payload=payload)
+
+
+class UserProfile(models.Model):
+    """Extra data for Django users authenticated via GitHub OAuth."""
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sentriq_profile")
+    github_id = models.CharField(max_length=32, blank=True, default="")
+    github_login = models.CharField(max_length=120, blank=True, default="")
+    github_access_token = models.TextField(blank=True, default="")
+    avatar_url = models.URLField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.username} ({self.github_login})"

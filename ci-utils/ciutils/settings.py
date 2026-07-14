@@ -7,6 +7,13 @@ provenance/audit trail. Redis is retained purely as the Celery broker/result
 backend. Scanners run locally (docker/subprocess via Celery), not as k8s Jobs.
 """
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load local .env for terminal-based dev (backend/worker run outside Docker).
+# .env lives at the project root, one directory above ci-utils/.
+load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -17,6 +24,7 @@ ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",
+    "django.contrib.sessions",
     "rest_framework",
     "corsheaders",
     "sentriq",
@@ -24,7 +32,12 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
 ]
 
 ROOT_URLCONF = "ciutils.urls"
@@ -50,8 +63,10 @@ else:
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": [],
-    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.LimitOffsetPagination",
@@ -59,8 +74,29 @@ REST_FRAMEWORK = {
     "UNAUTHENTICATED_USER": None,
 }
 
-# CORS: dev-open; the React frontend calls this API from another origin/port.
-CORS_ALLOW_ALL_ORIGINS = True
+# CORS: allow the React dev frontend to send cookies.
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^http://localhost(:\d+)?$",
+    r"^http://127\.0\.0\.1(:\d+)?$",
+]
+CSRF_TRUSTED_ORIGINS = [
+    FRONTEND_URL,
+]
+
+# Sessions / CSRF cookies for SPA auth.
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
+SESSION_COOKIE_NAME = "sentriq_sessionid"
+CSRF_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_HTTPONLY = False  # JS needs to read the token for API calls.
+CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
+CSRF_COOKIE_NAME = "sentriq_csrftoken"
+CSRF_USE_SESSIONS = False
 
 # ---- Celery ------------------------------------------------------------------
 CELERY_BROKER_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")

@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Repo Browser - SENTRIQ</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;family=Space+Grotesk:wght@600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-primary": "#002d6c",
+                      "surface-container": "#1a1f2d",
+                      "inverse-on-surface": "#2b303e",
+                      "on-primary-fixed-variant": "#004398",
+                      "surface-container-high": "#252a37",
+                      "on-background": "#dee2f5",
+                      "outline": "#8c909f",
+                      "tertiary-fixed": "#ffdcc2",
+                      "on-secondary-container": "#b5b8c4",
+                      "on-primary-container": "#00275f",
+                      "on-error-container": "#ffdad6",
+                      "on-tertiary-fixed": "#2e1500",
+                      "on-surface-variant": "#c2c6d6",
+                      "on-secondary": "#2c303a",
+                      "on-tertiary": "#4d2700",
+                      "secondary": "#c3c6d3",
+                      "primary-fixed-dim": "#afc6ff",
+                      "secondary-fixed-dim": "#c3c6d3",
+                      "tertiary-fixed-dim": "#ffb77b",
+                      "on-tertiary-container": "#432100",
+                      "primary-container": "#528dff",
+                      "on-secondary-fixed-variant": "#434751",
+                      "on-error": "#690005",
+                      "error": "#ffb4ab",
+                      "error-container": "#93000a",
+                      "on-primary-fixed": "#001a43",
+                      "background": "#0e1320",
+                      "inverse-primary": "#0059c6",
+                      "outline-variant": "#424753",
+                      "secondary-fixed": "#dfe2ef",
+                      "surface-tint": "#afc6ff",
+                      "on-surface": "#dee2f5",
+                      "tertiary-container": "#d87802",
+                      "surface-bright": "#343947",
+                      "on-tertiary-fixed-variant": "#6d3a00",
+                      "tertiary": "#ffb77b",
+                      "primary": "#afc6ff",
+                      "on-secondary-fixed": "#181c25",
+                      "surface-container-low": "#161b28",
+                      "surface-variant": "#2f3443",
+                      "surface-container-highest": "#2f3443",
+                      "surface-dim": "#0e1320",
+                      "inverse-surface": "#dee2f5",
+                      "surface-container-lowest": "#090e1b",
+                      "primary-fixed": "#d9e2ff",
+                      "secondary-container": "#454953",
+                      "surface": "#0e1320"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "border-width-thick": "2px",
+                      "border-width-thin": "1px",
+                      "margin-mobile": "16px",
+                      "gutter": "16px",
+                      "unit": "4px",
+                      "margin-desktop": "24px"
+              },
+              "fontFamily": {
+                      "body-sm": [
+                              "Inter"
+                      ],
+                      "code-label": [
+                              "JetBrains Mono"
+                      ],
+                      "headline-md": [
+                              "Space Grotesk"
+                      ],
+                      "headline-sm": [
+                              "Space Grotesk"
+                      ],
+                      "display-lg": [
+                              "Space Grotesk"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ],
+                      "headline-lg-mobile": [
+                              "Space Grotesk"
+                      ]
+              },
+              "fontSize": {
+                      "body-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "1.4",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "code-label": [
+                              "12px",
+                              {
+                                      "lineHeight": "1",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-sm": [
+                              "18px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "display-lg": [
+                              "48px",
+                              {
+                                      "lineHeight": "1.1",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "1.5",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg-mobile": [
+                              "32px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "fontWeight": "700"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+    </script>
+<style>
+        body {
+            background-color: #0b0d12;
+            background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.05) 1px, transparent 0);
+            background-size: 8px 8px;
+        }
+        .neo-border {
+            border: 2px solid #2a2f3d;
+        }
+        .neo-border-primary {
+            border: 2px solid theme('colors.primary');
+        }
+        .shimmer {
+            background: linear-gradient(90deg, #151922 0%, #2a2f3d 50%, #151922 100%);
+            background-size: 200% 100%;
+            animation: shimmer 2s infinite linear;
+        }
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+    </style>
+</head>
+<body class="text-on-surface min-h-screen flex flex-col font-body-md text-body-md">
+<!-- Top Navigation -->
+<header class="flex justify-between items-center w-full px-6 py-4 z-50 bg-surface border-b-4 border-primary shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] docked full-width top-0">
+<div class="flex items-center gap-4">
+<div class="font-headline-md text-headline-md text-primary bg-primary-fixed px-2 border-2 border-primary uppercase tracking-tighter">SENTRIQ</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant font-bold hover:text-primary transition-colors">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">notifications</span>
+</button>
+<button class="text-on-surface-variant font-bold hover:text-primary transition-colors">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">settings</span>
+</button>
+</div>
+<div class="flex items-center gap-3 pl-6 border-l-2 border-[#2a2f3d]">
+<img alt="Tej Bruhath avatar" class="w-8 h-8 neo-border rounded-none" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAovkw6bSZKWL2yQRlqJo3_3RIrIBy4EQy37w5CSkBGd_k2GNKiXQuXnNeUWLEjGM7gxCWjxNop9dkA6JltSr80tmklhlYmYFe5Wfd4rsNh2CQ5YokjZY3P7y2Ol7PNCL7qE0lUKCKOEiL7JxH-aKXn1T_JqPwKkhL7tQuix996SfDWa4osJJp6z0xdkYg17L07wN7kSJpVDZmbrdoKq38Ig7sWg3J1vqhxN9yDhvpQ41oh9TfPOwJksGRKrNpVHgf9DqfKd4GDFuSn"/>
+<span class="font-headline-sm text-headline-sm text-on-surface">Tej Bruhath</span>
+<button class="ml-2 text-on-surface-variant hover:text-error transition-colors p-1" title="Logout">
+<span class="material-symbols-outlined">logout</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 flex flex-col w-full max-w-7xl mx-auto px-6 py-8 gap-8">
+<!-- Header Section -->
+<div class="flex flex-col gap-4 md:flex-row md:items-end justify-between border-b-2 border-[#2a2f3d] pb-6">
+<div>
+<h1 class="font-display-lg text-display-lg text-on-surface tracking-tighter">Select a repository to scan</h1>
+<p class="font-body-md text-body-md text-on-surface-variant mt-2 max-w-2xl">Choose a repository to initiate SAST, DAST, or dependency scanning pipelines. Only repositories you have admin access to are displayed.</p>
+</div>
+<div class="w-full md:w-96 relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant z-10">search</span>
+<input class="w-full bg-[#0b0d12] text-on-surface neo-border focus:neo-border-primary focus:ring-0 pl-10 pr-4 py-3 font-code-label text-code-label transition-colors" placeholder="Filter repositories..." type="text"/>
+</div>
+</div>
+<!-- Repo Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+<!-- Repo Card (Active/Selected) -->
+<div class="bg-[#151922] neo-border-primary flex flex-col h-full relative overflow-hidden group">
+<div class="absolute top-0 right-0 w-16 h-16 bg-primary-fixed/10 -translate-y-1/2 translate-x-1/2 rotate-45 border-l-2 border-b-2 border-primary"></div>
+<div class="p-5 flex-1 flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-3">
+<img class="w-10 h-10 neo-border bg-[#0b0d12]" data-alt="Abstract geometric avatar icon representing a modern software project in a dark professional neo-brutalist style. Crisp lines, subtle blue glowing accents on a dark navy background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAKlt_ZVrVV2VLx6BuSKOT6-DQ-6PLoiyXxQxQ34Y9KvIwljSrbeOBJoWkbIeLxROOmcjAmZqWsBKaXLPKw4okBxJ-1EDH_9jbAciFP30RmPeHWxMjD6g0yNefRb36nv7YEfbw-TL5BW5yC5Rr8wqhvYu-uu8uoRON9YYsxlEQmRw5NoZODjknc86NB32Ee5njtZGbBAIZGTs4vHQttFbhOl8Fs6PUn7nyiaJXpkkynzEW8cpJLeQPuy9Nzc57FzYk-YgfhdL0PIH7Z"/>
+<div>
+<h3 class="font-headline-sm text-headline-sm text-primary break-all">tejbruhath/CI-SAST</h3>
+<div class="flex items-center gap-2 mt-1">
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant">call_split</span>
+<span class="font-code-label text-code-label text-on-surface-variant">main</span>
+</div>
+</div>
+</div>
+<span class="font-code-label text-code-label bg-primary text-on-primary px-2 py-1 neo-border">PRIVATE</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-2 line-clamp-2">Core CI/CD pipelines and static analysis tools for organizational security compliance.</p>
+</div>
+<div class="border-t-2 border-primary p-4 bg-primary-fixed/5">
+<button class="w-full py-2 bg-primary text-on-primary font-headline-sm text-headline-sm neo-border uppercase tracking-wide hover:bg-primary-container transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined">check_circle</span>
+                        Selected
+                    </button>
+</div>
+</div>
+<!-- Repo Card (Default) -->
+<div class="bg-[#151922] neo-border flex flex-col h-full hover:border-[#424753] transition-colors">
+<div class="p-5 flex-1 flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-3">
+<img class="w-10 h-10 neo-border bg-[#0b0d12]" data-alt="Abstract geometric avatar icon representing a modern web application in a dark professional neo-brutalist style. Sharp edges, technical grid background with subtle orange accents." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAKFEqtlobfj7M6OsH3Pu85ktdQ4wqFNQmif9Mp0iJ8RgyD-BtpY-G9SeeQ9B0ImcM7J_r0VAB2iWHCpHG2oHbxElIqeH2VeGosru8zpQ8dev5npVKr-anx2ooZtaH0s6O_OwD6oFFEZfde2vH36t6sWHI6FRbJDh2UJ1hkk0O53sKB5tsPJIpLqsOLrol11VlGK-IERWAqzVni1Zi-ykVYHFwIigDbLGRxVIgtfHjYiVWoESuPFPvFId3j44Jul77DXSAOvLR75MML"/>
+<div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface break-all">tejbruhath/web-frontend</h3>
+<div class="flex items-center gap-2 mt-1">
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant">call_split</span>
+<span class="font-code-label text-code-label text-on-surface-variant">master</span>
+</div>
+</div>
+</div>
+<span class="font-code-label text-code-label bg-surface-variant text-on-surface px-2 py-1 neo-border">PUBLIC</span>
+</div>
+</div>
+<div class="border-t-2 border-[#2a2f3d] p-4">
+<button class="w-full py-2 bg-transparent text-primary font-headline-sm text-headline-sm border-2 border-[#2a2f3d] uppercase tracking-wide hover:border-primary transition-colors">
+                        Select
+                    </button>
+</div>
+</div>
+<!-- Repo Card (Default) -->
+<div class="bg-[#151922] neo-border flex flex-col h-full hover:border-[#424753] transition-colors">
+<div class="p-5 flex-1 flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-3">
+<img class="w-10 h-10 neo-border bg-[#0b0d12]" data-alt="Abstract geometric avatar icon representing a backend microservice in a dark professional neo-brutalist style. Industrial design, dark gray tones with sharp structural lines." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDebTCrx6BrJU06xhreO9h0z0v4e_cFjXQmRCxwqLpx7a2n2lMZEfLKq4AaKabt2X6BSmV_rWcDurVH99dR2az6w07RxxiouWpzhwUPIhvQK_DQ9AT6KJO8qwvvPLge41n9QeZ8P_CnMsT2-tC-UmI6-QVFs_-aRluUTsjTtbCXj0umEW4WPyismDDR9gJy963quw_Fl8eb7hFbKOYQ82c8PjDcR3MFnfiGoX-7VcVebOz-h1YJR9sMAwMyN0HEKjKJDI2eaRbUR8ZY"/>
+<div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface break-all">tejbruhath/auth-service</h3>
+<div class="flex items-center gap-2 mt-1">
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant">call_split</span>
+<span class="font-code-label text-code-label text-on-surface-variant">develop</span>
+</div>
+</div>
+</div>
+<span class="font-code-label text-code-label bg-primary text-on-primary px-2 py-1 neo-border">PRIVATE</span>
+</div>
+</div>
+<div class="border-t-2 border-[#2a2f3d] p-4">
+<button class="w-full py-2 bg-transparent text-primary font-headline-sm text-headline-sm border-2 border-[#2a2f3d] uppercase tracking-wide hover:border-primary transition-colors">
+                        Select
+                    </button>
+</div>
+</div>
+<!-- Loading Skeleton Grid -->
+<div class="bg-[#151922] neo-border flex flex-col h-full">
+<div class="p-5 flex-1 flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-3 w-full">
+<div class="w-10 h-10 shimmer neo-border"></div>
+<div class="flex-1 space-y-2">
+<div class="h-5 w-3/4 shimmer"></div>
+<div class="h-3 w-1/4 shimmer"></div>
+</div>
+</div>
+</div>
+<div class="space-y-2 mt-4">
+<div class="h-3 w-full shimmer"></div>
+<div class="h-3 w-5/6 shimmer"></div>
+</div>
+</div>
+<div class="border-t-2 border-[#2a2f3d] p-4">
+<div class="w-full h-10 shimmer border-2 border-[#2a2f3d]"></div>
+</div>
+</div>
+<div class="bg-[#151922] neo-border flex flex-col h-full hidden md:flex">
+<div class="p-5 flex-1 flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-3 w-full">
+<div class="w-10 h-10 shimmer neo-border"></div>
+<div class="flex-1 space-y-2">
+<div class="h-5 w-2/3 shimmer"></div>
+<div class="h-3 w-1/3 shimmer"></div>
+</div>
+</div>
+</div>
+<div class="space-y-2 mt-4">
+<div class="h-3 w-full shimmer"></div>
+<div class="h-3 w-4/6 shimmer"></div>
+</div>
+</div>
+<div class="border-t-2 border-[#2a2f3d] p-4">
+<div class="w-full h-10 shimmer border-2 border-[#2a2f3d]"></div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

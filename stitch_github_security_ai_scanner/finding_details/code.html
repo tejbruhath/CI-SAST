@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Sentriq - Finding Detail Drawer</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;family=Space+Grotesk:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-primary": "#002d6c",
+                      "surface-container": "#1a1f2d",
+                      "inverse-on-surface": "#2b303e",
+                      "on-primary-fixed-variant": "#004398",
+                      "surface-container-high": "#252a37",
+                      "on-background": "#dee2f5",
+                      "outline": "#8c909f",
+                      "tertiary-fixed": "#ffdcc2",
+                      "on-secondary-container": "#b5b8c4",
+                      "on-primary-container": "#00275f",
+                      "on-error-container": "#ffdad6",
+                      "on-tertiary-fixed": "#2e1500",
+                      "on-surface-variant": "#c2c6d6",
+                      "on-secondary": "#2c303a",
+                      "on-tertiary": "#4d2700",
+                      "secondary": "#c3c6d3",
+                      "primary-fixed-dim": "#afc6ff",
+                      "secondary-fixed-dim": "#c3c6d3",
+                      "tertiary-fixed-dim": "#ffb77b",
+                      "on-tertiary-container": "#432100",
+                      "primary-container": "#528dff",
+                      "on-secondary-fixed-variant": "#434751",
+                      "on-error": "#690005",
+                      "error": "#ffb4ab",
+                      "error-container": "#93000a",
+                      "on-primary-fixed": "#001a43",
+                      "background": "#0e1320",
+                      "inverse-primary": "#0059c6",
+                      "outline-variant": "#424753",
+                      "secondary-fixed": "#dfe2ef",
+                      "surface-tint": "#afc6ff",
+                      "on-surface": "#dee2f5",
+                      "tertiary-container": "#d87802",
+                      "surface-bright": "#343947",
+                      "on-tertiary-fixed-variant": "#6d3a00",
+                      "tertiary": "#ffb77b",
+                      "primary": "#afc6ff",
+                      "on-secondary-fixed": "#181c25",
+                      "surface-container-low": "#161b28",
+                      "surface-variant": "#2f3443",
+                      "surface-container-highest": "#2f3443",
+                      "surface-dim": "#0e1320",
+                      "inverse-surface": "#dee2f5",
+                      "surface-container-lowest": "#090e1b",
+                      "primary-fixed": "#d9e2ff",
+                      "secondary-container": "#454953",
+                      "surface": "#0e1320"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "border-width-thick": "2px",
+                      "border-width-thin": "1px",
+                      "margin-mobile": "16px",
+                      "gutter": "16px",
+                      "unit": "4px",
+                      "margin-desktop": "24px"
+              },
+              "fontFamily": {
+                      "body-sm": [
+                              "Inter"
+                      ],
+                      "code-label": [
+                              "JetBrains Mono"
+                      ],
+                      "headline-md": [
+                              "Space Grotesk"
+                      ],
+                      "headline-sm": [
+                              "Space Grotesk"
+                      ],
+                      "display-lg": [
+                              "Space Grotesk"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ],
+                      "headline-lg-mobile": [
+                              "Space Grotesk"
+                      ]
+              },
+              "fontSize": {
+                      "body-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "1.4",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "code-label": [
+                              "12px",
+                              {
+                                      "lineHeight": "1",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-sm": [
+                              "18px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "display-lg": [
+                              "48px",
+                              {
+                                      "lineHeight": "1.1",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "1.5",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg-mobile": [
+                              "32px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "fontWeight": "700"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+    </script>
+<style>
+        body {
+            background-color: #0b0d12;
+            background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+            background-size: 8px 8px;
+        }
+        .scanline {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom, transparent 50%, rgba(255,255,255,0.02) 51%);
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 50;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .animate-blink {
+            animation: blink 1s infinite;
+        }
+    </style>
+</head>
+<body class="text-on-surface font-body-md bg-background min-h-screen overflow-hidden flex relative">
+<div class="scanline"></div>
+<!-- SideNavBar (Suppressed as this is a focused detail view, but leaving a shell placeholder for context if needed, though instructions say to suppress if intent is transactional/focused. Suppressing main navs to focus on drawer context). -->
+<!-- We will simulate the main dashboard behind an overlay -->
+<div class="flex-1 p-8 opacity-30 pointer-events-none">
+<h1 class="font-headline-md text-headline-md mb-4 text-surface-variant">DASHBOARD VIEW</h1>
+<div class="grid grid-cols-3 gap-4">
+<div class="h-32 bg-surface-container border-2 border-outline-variant"></div>
+<div class="h-32 bg-surface-container border-2 border-outline-variant"></div>
+<div class="h-32 bg-surface-container border-2 border-outline-variant"></div>
+</div>
+</div>
+<!-- Slide-over Drawer -->
+<div class="fixed inset-y-0 right-0 w-full md:w-[600px] bg-surface-container border-l-4 border-outline-variant shadow-[-8px_0_0_0_rgba(42,47,61,0.5)] flex flex-col z-50 transform transition-transform duration-300 translate-x-0">
+<!-- Drawer Header -->
+<header class="p-6 border-b-2 border-outline-variant flex flex-col gap-4 shrink-0 bg-surface">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-3">
+<span class="bg-error text-on-error font-code-label text-code-label px-2 py-1 animate-blink border-2 border-error">CRITICAL</span>
+<span class="text-on-surface-variant font-code-label text-code-label border-2 border-outline-variant px-2 py-1">SECRET</span>
+</div>
+<button aria-label="Close drawer" class="text-on-surface-variant hover:text-primary transition-colors focus:outline-none">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">close</span>
+</button>
+</div>
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface mb-1">aws-access-key exposed</h2>
+<div class="flex items-center gap-2 text-on-surface-variant font-code-label text-code-label">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 0;">build</span>
+<span>gitleaks</span>
+<span class="w-1 h-1 bg-outline-variant rounded-full mx-1"></span>
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 0;">description</span>
+<span>app/config.py:12</span>
+</div>
+</div>
+</header>
+<!-- Drawer Content (Scrollable) -->
+<div class="flex-1 overflow-y-auto p-6 flex flex-col gap-8 bg-background">
+<!-- Triage Section -->
+<section class="flex flex-col gap-4 border-2 border-outline-variant bg-surface-container p-5">
+<div class="flex justify-between items-center border-b-2 border-outline-variant pb-3 mb-1">
+<h3 class="font-headline-sm text-headline-sm text-primary uppercase tracking-wider">AI Triage</h3>
+<div class="flex items-center gap-2">
+<span class="font-code-label text-code-label text-on-surface-variant">CONFIDENCE:</span>
+<span class="font-code-label text-code-label text-primary">95%</span>
+</div>
+</div>
+<div class="flex items-center gap-3 mb-2">
+<span class="material-symbols-outlined text-error" style="font-variation-settings: 'FILL' 1;">warning</span>
+<span class="font-headline-sm text-headline-sm text-error uppercase">Verdict: Real</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">
+                    The detected string matches the entropy and formatting characteristics of a valid AWS Access Key ID. It is assigned to a variable named <code class="font-code-label text-code-label bg-surface px-1 py-0.5 border border-outline-variant">AWS_ACCESS_KEY_ID</code> which strongly indicates a hardcoded credential. Verification against AWS STS (mock) suggests this is active.
+                </p>
+</section>
+<!-- Suggested Fix Section -->
+<section class="flex flex-col gap-4">
+<h3 class="font-headline-sm text-headline-sm text-on-surface uppercase border-b-2 border-outline-variant pb-2">Suggested Fix</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">
+                    Remove the hardcoded secret and replace it with an environment variable reference to maintain security while ensuring functionality.
+                </p>
+<!-- Diff Viewer -->
+<div class="border-2 border-outline-variant bg-surface-container font-code-label text-code-label overflow-x-auto">
+<div class="flex bg-surface-container-high border-b-2 border-outline-variant px-4 py-2">
+<span class="text-on-surface-variant">app/config.py</span>
+</div>
+<div class="flex flex-col whitespace-pre">
+<div class="flex w-full hover:bg-surface-variant">
+<div class="w-12 text-right pr-4 py-1 text-outline select-none border-r-2 border-outline-variant bg-surface">11</div>
+<div class="px-4 py-1 text-on-surface-variant">class Config:</div>
+</div>
+<div class="flex w-full bg-error-container/20 hover:bg-error-container/30 border-l-4 border-error">
+<div class="w-12 text-right pr-4 py-1 text-error select-none border-r-2 border-outline-variant bg-surface">-12</div>
+<div class="px-4 py-1 text-error">    AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"</div>
+</div>
+<div class="flex w-full bg-primary/10 hover:bg-primary/20 border-l-4 border-primary">
+<div class="w-12 text-right pr-4 py-1 text-primary select-none border-r-2 border-outline-variant bg-surface">+12</div>
+<div class="px-4 py-1 text-primary">    AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")</div>
+</div>
+<div class="flex w-full hover:bg-surface-variant">
+<div class="w-12 text-right pr-4 py-1 text-outline select-none border-r-2 border-outline-variant bg-surface">13</div>
+<div class="px-4 py-1 text-on-surface-variant">    DEBUG = True</div>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- Drawer Footer (Actions) -->
+<footer class="p-6 border-t-2 border-outline-variant bg-surface flex flex-col gap-4 shrink-0">
+<!-- Warning Banner -->
+<div class="flex items-center gap-3 bg-error-container text-on-error-container p-3 border-2 border-error">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">error</span>
+<span class="font-body-md text-body-md font-bold uppercase">Critical — Human approval required before auto-remediation.</span>
+</div>
+<!-- HITL Actions -->
+<div class="flex gap-3 w-full">
+<button class="flex-1 bg-surface-container border-2 border-outline-variant text-on-surface font-code-label text-code-label py-3 hover:border-primary hover:text-primary transition-colors focus:outline-none uppercase">
+                    Deny
+                </button>
+<button class="flex-1 bg-surface-container border-2 border-outline-variant text-on-surface font-code-label text-code-label py-3 hover:border-primary hover:text-primary transition-colors focus:outline-none uppercase">
+                    Edit
+                </button>
+<button class="flex-1 bg-primary border-2 border-primary text-on-primary font-code-label text-code-label py-3 hover:bg-primary-fixed hover:border-primary-fixed transition-colors focus:outline-none uppercase font-bold">
+                    Approve
+                </button>
+</div>
+<!-- PR Section -->
+<div class="pt-2">
+<button class="w-full bg-surface-container border-2 border-outline-variant text-outline font-code-label text-code-label py-3 uppercase flex justify-center items-center gap-2 cursor-not-allowed opacity-70" disabled="">
+<span class="material-symbols-outlined text-[18px]">merge</span>
+                    Create Pull Request
+                </button>
+</div>
+</footer>
+</div>
+</body></html>
