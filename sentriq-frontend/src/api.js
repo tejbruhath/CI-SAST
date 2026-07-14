@@ -86,6 +86,10 @@ const realApi = {
       await ensureCsrf();
       return req(`/findings/${id}/pr`, { method: "POST" });
     },
+    fixWithAi: async (id) => {
+      await ensureCsrf();
+      return req(`/findings/${id}/fix`, { method: "POST" });
+    },
   },
   metrics: () => req("/metrics"),
 };
