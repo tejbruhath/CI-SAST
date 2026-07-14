@@ -10,6 +10,8 @@ import ScansList from "./components/ScansList.jsx";
 import QueueStatus from "./components/QueueStatus.jsx";
 import FindingsTable from "./components/FindingsTable.jsx";
 import FindingDetail from "./components/FindingDetail.jsx";
+import AssetsPanel from "./components/AssetsPanel.jsx";
+import MetricsPanel from "./components/MetricsPanel.jsx";
 
 const POLL_MS = 3000;
 
@@ -30,6 +32,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [detail, setDetail] = useState(null);
   const [queue, setQueue] = useState({ queue_depth: 0, active_tasks: 0 });
+  const [metrics, setMetrics] = useState(null);
   const [tab, setTab] = useState("dashboard");
 
   const [busy, setBusy] = useState(false);
@@ -101,14 +104,16 @@ export default function App() {
     if (!selectedRepo) return;
     try {
       const repoName = selectedRepo.full_name;
-      const [s, f, q] = await Promise.all([
+      const [s, f, q, m] = await Promise.all([
         api.scans.list(repoName),
         api.findings.list({ ...filters, repo: repoName }),
         api.queue.status(),
+        api.metrics(),
       ]);
       setScans(s);
       setFindings(f);
       setQueue(q);
+      setMetrics(m);
       setErr(null);
     } catch (e) {
       setErr(e.message);
@@ -298,6 +303,7 @@ export default function App() {
         <div className="flex-1 min-h-0 p-6 flex flex-col gap-6">
           {tab === "dashboard" && (
             <>
+              <MetricsPanel metrics={metrics} />
               <QueueStatus queue={queue} />
               <FindingsTable
                 findings={findings}
@@ -332,11 +338,13 @@ export default function App() {
           )}
 
           {tab === "assets" && (
-            <div className="flex-1 min-h-0 flex items-center justify-center border-2 border-outline bg-surface">
-              <p className="font-code-label text-code-label text-outline uppercase">
-                Assets — not built yet
-              </p>
-            </div>
+            <AssetsPanel
+              repos={repos}
+              scans={scans}
+              findings={findings}
+              selectedRepo={selectedRepo}
+              onSelectRepo={setSelectedRepo}
+            />
           )}
         </div>
       </main>

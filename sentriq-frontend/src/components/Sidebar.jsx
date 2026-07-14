@@ -52,7 +52,7 @@ export default function Sidebar({ user, activeTab = "dashboard", onNavigate, onL
       </div>
 
       <div className="px-2 pb-4 pt-2 border-t-2 border-outline flex flex-col gap-1">
-        <a href="#" onClick={(e) => e.preventDefault()} className="text-outline flex items-center p-2 border-2 border-transparent hover:border-outline transition-all text-xs font-code-label uppercase">
+        <a href="https://github.com/tejbruhath/CI-SAST/tree/main/docs" target="_blank" rel="noreferrer" className="text-outline flex items-center p-2 border-2 border-transparent hover:border-outline transition-all text-xs font-code-label uppercase">
           <span className="material-symbols-outlined mr-2 text-[18px]">description</span> Docs
         </a>
         <button
