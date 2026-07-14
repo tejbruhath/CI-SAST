@@ -1,4 +1,4 @@
-export default function Sidebar({ user, activeTab = "dashboard", onNavigate, onLogout }) {
+export default function Sidebar({ user, activeTab = "dashboard", onNavigate, onLogout, canCreatePr, onCreatePr }) {
   const navItems = [
     { id: "dashboard", label: "Dashboard", icon: "dashboard" },
     { id: "config", label: "Scan Config", icon: "settings_input_component" },
@@ -41,6 +41,13 @@ export default function Sidebar({ user, activeTab = "dashboard", onNavigate, onL
           className="w-full bg-primary text-on-primary border-2 border-primary font-code-label font-bold py-2 uppercase hover:bg-inverse-primary hover:text-white transition-colors"
         >
           START NEW SCAN
+        </button>
+        <button
+          onClick={onCreatePr}
+          disabled={!canCreatePr}
+          className="w-full bg-primary text-on-primary border-2 border-primary font-code-label font-bold py-2 uppercase hover:bg-inverse-primary hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          CREATE PR
         </button>
       </div>
 

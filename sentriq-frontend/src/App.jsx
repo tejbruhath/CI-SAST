@@ -34,6 +34,7 @@ export default function App() {
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [fixingIds, setFixingIds] = useState(new Set());
 
   // -------------------------------------------------------------------------
   // Auth
@@ -74,7 +75,7 @@ export default function App() {
     await api.auth.logout();
     setUser(null);
     setSelectedRepo(null);
-    setSelectedFinding(null);
+    setSelectedId(null);
     setScans([]);
     setFindings([]);
     setRepos([]);
@@ -158,6 +159,21 @@ export default function App() {
     };
   }, [selectedId]);
 
+  // Once a queued AI fix lands in the polled list, stop showing the spinner.
+  useEffect(() => {
+    setFixingIds((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of prev) {
+        if (findings.some((f) => f.id === id && f.fix)) {
+          next.delete(id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [findings]);
+
   // -------------------------------------------------------------------------
   // Actions
   // -------------------------------------------------------------------------
@@ -187,16 +203,6 @@ export default function App() {
     setDetail((cur) => (cur?.id === id ? d : cur));
   };
 
-  const doHitl = async (id, action, note) => {
-    try {
-      await api.findings.hitl(id, action, user?.login || "reviewer", note, null);
-      await refresh();
-      if (selectedId === id) await reloadDetail(id);
-    } catch (e) {
-      setErr(e.message);
-    }
-  };
-
   const doCreatePr = async (id) => {
     try {
       await api.findings.createPr(id);
@@ -206,6 +212,37 @@ export default function App() {
       setErr(e.message);
     }
   };
+
+  const doFixWithAi = async (id) => {
+    setFixingIds((prev) => new Set(prev).add(id));
+    try {
+      await api.findings.fixWithAi(id);
+      await refresh();
+    } catch (e) {
+      setErr(e.message);
+      setFixingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const canCreatePr = findings.some((f) => f.fix);
+
+  const handleCreatePr = () => {
+    const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+    const candidate = findings
+      .filter((f) => f.fix)
+      .sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 99) - (SEVERITY_ORDER[b.severity] ?? 99))[0];
+    if (candidate) doCreatePr(candidate.id);
+  };
+
+  // The detail serializer returns `scan` as an id, so enrich it with the scan
+  // target so the detail panel can build deep links into github.dev.
+  const detailFinding = detail
+    ? { ...detail, scan_target: scans.find((s) => s.id === detail.scan)?.target }
+    : null;
 
   // -------------------------------------------------------------------------
   // Render
@@ -247,7 +284,7 @@ export default function App() {
         }}
       />
 
-      <Sidebar user={user} activeTab={tab} onNavigate={setTab} onLogout={logout} />
+      <Sidebar user={user} activeTab={tab} onNavigate={setTab} onLogout={logout} canCreatePr={canCreatePr} onCreatePr={handleCreatePr} />
 
       <main className="flex-1 flex flex-col min-w-0 min-h-0 pl-64 z-10 relative">
         <Header repo={selectedRepo} user={user} onLogout={logout} />
@@ -268,7 +305,8 @@ export default function App() {
                 setFilters={setFilters}
                 onPick={setSelectedId}
                 selected={selectedId}
-                onCreatePr={doCreatePr}
+                onFixWithAi={doFixWithAi}
+                fixingIds={fixingIds}
                 busy={busy}
               />
             </>
@@ -305,9 +343,9 @@ export default function App() {
 
       {detail && (
         <FindingDetail
-          finding={detail}
+          finding={detailFinding}
           onClose={() => setSelectedId(null)}
-          onHitl={doHitl}
+          onFixWithAi={doFixWithAi}
           onCreatePr={doCreatePr}
           busy={busy}
         />
