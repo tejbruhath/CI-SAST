@@ -1,7 +1,7 @@
 """On-demand AI fix API + orphan reaper tests.
 
 Run:
-  USE_SQLITE=1 python manage.py test sentriq.test_fixapi
+  USE_SQLITE=1 python manage.py test tests.test_fixapi
 """
 import os
 import tempfile
@@ -12,9 +12,9 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from . import deepseek, executor, tasks
-from .deepseek import FixResult
-from .models import Finding, FixSuggestion, Scan, ProvenanceEvent
+from sentriq import deepseek, executor, tasks
+from sentriq.deepseek import FixResult
+from sentriq.models import Finding, FixSuggestion, Scan, ProvenanceEvent
 
 
 User = get_user_model()

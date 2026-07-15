@@ -237,6 +237,7 @@ sequenceDiagram
 - **Fail safe on fix.** A missing/empty diff simply yields `ok=False`; the scan continues.
 - **Config knobs.** `LLM_ENABLED` skips both stages entirely. Fix cost is gated per-scan by `auto_fix_severity`; `"none"` means *triage only* — it must not skip triage (it once did, which made the AI look dead from the UI).
 - **Never raises.** `_chat()` catches `Exception` and returns `None`; both public functions translate that into a safe error result.
+- **Version-bump fixes have no live source of truth (found by CodeRabbit, unfixed).** `FIX_SYSTEM` treats every finding the same: "propose the minimal edit." For a dependency-CVE finding (Trivy/`requirements.txt`) the model was asked to name the fixed version, and it named `Django==4.2.15` for CVE-2024-42005 — correct only in the sense that 4.2.15 is *a* version where that changelog entry landed. In reality 4.2.15 already carries dozens of later CVEs and the whole 4.2 line is EOL (final release 4.2.30, April 2026); CodeRabbit's OSV-Scanner pass on the resulting PR flagged it. Root cause: picking a dependency version needs a live, checkable answer (registry/OSV lookup), and an LLM only has a training-data snapshot of one. See [concerns #23](concerns.md#23-ai-picked-fix-versions-have-no-live-source-of-truth).
 
 ## Related docs
 

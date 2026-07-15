@@ -24,14 +24,14 @@
 #   kubectl patch resourcequota sast-quota -n sast --type='json' \
 #     -p='[{"op":"replace","path":"/spec/hard/pods","value":"35"}]'
 apiVersion: v1
-kind: ResourceQuota
+kind: ResourceQuota # hard caps for namespace admission
 metadata:
   name: sast-quota
-  namespace: sast
+  namespace: sast # only worker namespace is quota-bounded
 spec:
   hard:
-    requests.cpu: "1500m"
-    requests.memory: "3Gi"
-    limits.cpu: "3500m"
-    limits.memory: "3900Mi"
-    pods: "25"
+    requests.cpu: "1500m" # sum of pod requests.cpu cannot exceed
+    requests.memory: "3Gi" # sum of pod requests.memory
+    limits.cpu: "3500m" # sum of pod limits.cpu (throttle budget)
+    limits.memory: "3900Mi" # sum of pod limits.memory (hard OOM budget)
+    pods: "25" # max concurrent pods (scanners + system in ns)

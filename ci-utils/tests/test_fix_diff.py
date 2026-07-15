@@ -5,7 +5,7 @@ invented context), so the diff is now computed from the file with difflib and
 the LLM only chooses the text to swap. This test guards that: the diff must
 apply cleanly to a real git repo.
 
-  USE_SQLITE=1 python manage.py test sentriq.test_fix_diff
+  USE_SQLITE=1 python manage.py test tests.test_fix_diff
 """
 import os
 import subprocess
@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase
 
-from . import deepseek
+from sentriq import deepseek
 
 REQUIREMENTS = (
     "Django==4.2.13\n"

@@ -15,9 +15,9 @@ native-output string, `parse()` returns Findings, no Docker or network needed.
 
 Adapters register themselves in the REGISTRY via `register()`.
 """
-from __future__ import annotations
+from __future__ import annotations  # postpone evaluation of type annotations
 
-from typing import Dict, List, Type
+from typing import Dict, List, Type  # type hints for registry and methods
 
 from ..schema import Finding, STATIC, DYNAMIC  # noqa: F401 (re-exported for adapters)
 
@@ -44,30 +44,30 @@ class BaseAdapter:
           `workdir`.
         Must NOT depend on host state — only the mounted workdir + target.
         """
-        raise NotImplementedError
+        raise NotImplementedError  # subclasses must override this method
 
     def parse(self, raw_output: str, target: str) -> List[Finding]:
         """Convert the tool's native output (contents of OUTPUT_FILE) into
         Findings. Pure: no I/O, no Docker. `target` is passed so dynamic
         adapters can record the scanned URL. Return [] on empty/no findings."""
-        raise NotImplementedError
+        raise NotImplementedError  # subclasses implement tool-specific parsing
 
 
 # ---- registry ----------------------------------------------------------------
-REGISTRY: Dict[str, BaseAdapter] = {}
+REGISTRY: Dict[str, BaseAdapter] = {}  # name -> live adapter instance
 
 
 def register(cls: Type[BaseAdapter]) -> Type[BaseAdapter]:
     """Class decorator: instantiate + register an adapter under its NAME."""
     if not cls.NAME:
-        raise ValueError(f"{cls.__name__} must set NAME")
-    REGISTRY[cls.NAME] = cls()
-    return cls
+        raise ValueError(f"{cls.__name__} must set NAME")  # fail fast on misconfig
+    REGISTRY[cls.NAME] = cls()  # store a single shared instance
+    return cls  # return class unchanged for normal decoration use
 
 
 def get(name: str) -> BaseAdapter:
-    return REGISTRY[name]
+    return REGISTRY[name]  # KeyError if unknown tool name
 
 
 def for_pipeline(pipeline: str) -> List[BaseAdapter]:
-    return [a for a in REGISTRY.values() if a.PIPELINE == pipeline]
+    return [a for a in REGISTRY.values() if a.PIPELINE == pipeline]  # filter by type

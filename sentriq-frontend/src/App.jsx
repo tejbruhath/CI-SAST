@@ -42,6 +42,10 @@ export default function App() {
   const [prOpen, setPrOpen] = useState(false);
   const [prResult, setPrResult] = useState(null);
   const [prBusy, setPrBusy] = useState(false);
+  // Frozen at request time: `approvedFindings` drops these once refresh() sees
+  // pr_status flip to "open", so the live list can't be used to render the
+  // post-result dialog (it would read as "nothing approved").
+  const [prSnapshot, setPrSnapshot] = useState([]);
 
   // -------------------------------------------------------------------------
   // Auth
@@ -112,7 +116,7 @@ export default function App() {
         api.scans.list(repoName),
         api.findings.list({ ...filters, repo: repoName }),
         api.queue.status(),
-        api.metrics(),
+        api.metrics(repoName),
       ]);
       setScans(s);
       setFindings(f);
@@ -198,6 +202,7 @@ export default function App() {
         auto_fix_severity,
       });
       await refresh();
+      setTab("history");
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -240,6 +245,7 @@ export default function App() {
 
   const doCreateBatchPr = async () => {
     setPrBusy(true);
+    setPrSnapshot(approvedFindings);
     try {
       const res = await api.pr.createBatch(selectedRepo.full_name);
       setPrResult(res);
@@ -337,7 +343,7 @@ export default function App() {
           {tab === "dashboard" && (
             <>
               <MetricsPanel metrics={metrics} />
-              <QueueStatus queue={queue} />
+              <QueueStatus queue={queue} triagingScan={scans.find((s) => s.triaging)} />
               <FindingsTable
                 findings={findings}
                 filters={filters}
@@ -385,7 +391,7 @@ export default function App() {
 
       {prOpen && (
         <CreatePrDialog
-          approved={approvedFindings}
+          approved={prResult ? prSnapshot : approvedFindings}
           repoSlug={selectedRepo?.full_name}
           result={prResult}
           busy={prBusy}

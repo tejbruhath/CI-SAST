@@ -1,55 +1,55 @@
 # Redis: queue + job state for ci-utils. AOF on for crash durability (arch doc s9/s11).
 apiVersion: v1
-kind: PersistentVolumeClaim
+kind: PersistentVolumeClaim # durable Redis AOF volume
 metadata:
   name: sast-redis
-  namespace: sast
+  namespace: sast # worker namespace
 spec:
-  accessModes: ["ReadWriteOnce"]
-  storageClassName: local-path
+  accessModes: ["ReadWriteOnce"] # single-node volume
+  storageClassName: local-path # local-path provisioner on worker
   resources:
     requests:
-      storage: 1Gi
+      storage: 1Gi # small; job state is not huge
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: Deployment # single Redis replica
 metadata:
   name: sast-redis
   namespace: sast
 spec:
-  replicas: 1
+  replicas: 1 # one Redis instance is enough for this design
   selector:
-    matchLabels: { app: sast-redis }
+    matchLabels: { app: sast-redis } # match pod template labels
   template:
     metadata:
-      labels: { app: sast-redis }
+      labels: { app: sast-redis } # Service selector target
     spec:
       nodeSelector:
-        sast.aotm/role: worker
+        sast.aotm/role: worker # pin Redis to worker node
       containers:
         - name: redis
-          image: redis:7-alpine
-          args: ["redis-server", "--appendonly", "yes"]
+          image: redis:7-alpine # lightweight Redis 7
+          args: ["redis-server", "--appendonly", "yes"] # enable AOF durability
           ports:
-            - containerPort: 6379
+            - containerPort: 6379 # Redis protocol port
           resources:
-            requests: { cpu: "50m", memory: "128Mi" }
-            limits: { cpu: "250m", memory: "256Mi" }
+            requests: { cpu: "50m", memory: "128Mi" } # light request floor
+            limits: { cpu: "250m", memory: "256Mi" } # hard caps under quota
           volumeMounts:
             - name: data
-              mountPath: /data
+              mountPath: /data # AOF + RDB directory
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: sast-redis
+            claimName: sast-redis # PVC from above
 ---
 apiVersion: v1
-kind: Service
+kind: Service # stable DNS name for clients
 metadata:
   name: sast-redis
   namespace: sast
 spec:
-  selector: { app: sast-redis }
+  selector: { app: sast-redis } # route to Redis pods
   ports:
-    - port: 6379
-      targetPort: 6379
+    - port: 6379 # service port
+      targetPort: 6379 # container port

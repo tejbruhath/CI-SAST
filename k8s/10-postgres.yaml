@@ -1,15 +1,15 @@
 apiVersion: v1
-kind: Secret
+kind: Secret # DB password for SonarQube's Postgres
 metadata:
   name: sonar-db
-  namespace: sast-system
+  namespace: sast-system # master-side control plane ns
 type: Opaque
 stringData:
   # Overwritten by the master script with a generated password.
-  POSTGRES_PASSWORD: "changeme"
+  POSTGRES_PASSWORD: "changeme" # placeholder; replace in real deploys
 ---
 apiVersion: v1
-kind: PersistentVolumeClaim
+kind: PersistentVolumeClaim # Postgres data directory
 metadata:
   name: sonar-postgres
   namespace: sast-system
@@ -18,10 +18,10 @@ spec:
   storageClassName: local-path
   resources:
     requests:
-      storage: 5Gi
+      storage: 5Gi # Sonar issue DB grows over time
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: Deployment # Postgres for SonarQube only (not Sentriq app DB)
 metadata:
   name: sonar-postgres
   namespace: sast-system
@@ -34,24 +34,24 @@ spec:
       labels: { app: sonar-postgres }
     spec:
       nodeSelector:
-        sast.aotm/role: master
+        sast.aotm/role: master # pin to master node
       tolerations:
-        - key: node-role.kubernetes.io/control-plane
+        - key: node-role.kubernetes.io/control-plane # allow control-plane taint
           operator: Exists
           effect: NoSchedule
       containers:
         - name: postgres
-          image: postgres:15
+          image: postgres:15 # stable Postgres major
           env:
             - name: POSTGRES_USER
-              value: sonar
+              value: sonar # SonarQube DB user
             - name: POSTGRES_DB
-              value: sonarqube
+              value: sonarqube # database name
             - name: POSTGRES_PASSWORD
               valueFrom:
-                secretKeyRef: { name: sonar-db, key: POSTGRES_PASSWORD }
+                secretKeyRef: { name: sonar-db, key: POSTGRES_PASSWORD } # from Secret
             - name: PGDATA
-              value: /var/lib/postgresql/data/pgdata
+              value: /var/lib/postgresql/data/pgdata # nested path avoids volume ownership issues
           ports:
             - containerPort: 5432
           resources:
@@ -59,14 +59,14 @@ spec:
             limits: { cpu: "500m", memory: "512Mi" }
           volumeMounts:
             - name: data
-              mountPath: /var/lib/postgresql/data
+              mountPath: /var/lib/postgresql/data # PVC mount
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: sonar-postgres
 ---
 apiVersion: v1
-kind: Service
+kind: Service # in-cluster DNS for SonarQube JDBC
 metadata:
   name: sonar-postgres
   namespace: sast-system

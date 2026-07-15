@@ -1,6 +1,6 @@
 export default {
   plugins: {
-    tailwindcss: {},
-    autoprefixer: {},
+    tailwindcss: {}, // expand Tailwind utility classes into CSS
+    autoprefixer: {}, // add vendor prefixes for browser support
   },
 };

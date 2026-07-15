@@ -38,7 +38,7 @@ A backend `401` on `/api/v1/metrics` is healthy: the API is `IsAuthenticated`.
 
 ```bash
 cd ci-utils
-USE_SQLITE=1 .venv/bin/python manage.py test sentriq   # 24 tests
+USE_SQLITE=1 .venv/bin/python manage.py test tests     # 24 tests
 USE_SQLITE=1 .venv/bin/python smoke_test.py            # end-to-end, tools+LLM mocked
 .venv/bin/python -m sentriq.deepseek                   # offline self-check
 cd ../sentriq-frontend && npm run build                # the ONLY frontend check that exists
@@ -55,7 +55,7 @@ cd ../sentriq-frontend && npm run build                # the ONLY frontend check
 | Fix generation | Working. LLM picks `old_str`/`new_str`; `difflib` builds the diff. |
 | On-demand fix (`Fix with AI`) | Working, verified live (3.1s, diff applied clean). |
 | Approval gate | Working, test-pinned: unapproved fixes cannot reach a PR. |
-| Batch PR (one branch, all approved) | Working, mock-tested. **Not yet run against real GitHub.** |
+| Batch PR (one branch, all approved) | Working, **proven against real GitHub** 2026-07-15 (`tejbruhath/VaulS.ai#2` and a follow-up, 1 fix each). |
 | GitHub OAuth login | Working. 8h sliding sessions, token revoked on logout. |
 | ASPM metrics panel | Wired (it existed but was rendered nowhere until 2026-07-15). |
 | Assets tab | Real (repo list + severity rollup). |

@@ -3,15 +3,15 @@
 The whole point of the approval gate is that unapproved AI output can never
 reach a pull request. That is the property these tests pin.
 
-  USE_SQLITE=1 python manage.py test sentriq.test_batch_pr
+  USE_SQLITE=1 python manage.py test tests.test_batch_pr
 """
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
-from . import executor, scm as scm_mod, tasks
-from .models import Finding, FixSuggestion, Scan
+from sentriq import executor, scm as scm_mod, tasks
+from sentriq.models import Finding, FixSuggestion, Scan
 
 
 def _fix(scan, tool, sev, score, status):

@@ -2,25 +2,25 @@
 # job land on the same worker node (nodeSelector), and RWO allows multiple pods
 # on the SAME node to mount. Provisioned by local-path (installed by master script).
 apiVersion: v1
-kind: PersistentVolumeClaim
+kind: PersistentVolumeClaim # claim for cloned git repos
 metadata:
-  name: sast-repos
+  name: sast-repos # mounted by ci-utils and scanner Jobs
   namespace: sast
 spec:
-  accessModes: ["ReadWriteOnce"]
-  storageClassName: local-path
+  accessModes: ["ReadWriteOnce"] # single-node multi-pod OK
+  storageClassName: local-path # provisioned on worker disk
   resources:
     requests:
-      storage: 10Gi
+      storage: 10Gi # room for concurrent clones
 ---
 apiVersion: v1
-kind: PersistentVolumeClaim
+kind: PersistentVolumeClaim # claim for aggregated scan artifacts
 metadata:
-  name: ci-utils-artifacts
+  name: ci-utils-artifacts # mega-artifacts / reports
   namespace: sast
 spec:
   accessModes: ["ReadWriteOnce"]
   storageClassName: local-path
   resources:
     requests:
-      storage: 5Gi
+      storage: 5Gi # smaller than repos PVC

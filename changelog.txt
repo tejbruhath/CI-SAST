@@ -1,0 +1,5 @@
+[PHASE 1] sentriq/adapters/semgrep.py — Added missing inline comments to bare return/loop/dict lines
+[PHASE 1] sentriq/adapters/zap.py — Added missing inline comments to _truncate, loop/continue, and list-init lines
+[PHASE 1] sentriq/adapters/nuclei.py — Added missing inline comments to splitlines loop and url=None lines
+[PHASE 1] orchestrator/redis_store.py — Added missing inline comment to r = client() in delete_job_keys
+[PHASE 1] requirements.txt — Added inline comments explaining purpose of every dependency pin

@@ -1,11 +1,11 @@
 # sast        -> worker-side: ci-utils, redis, scanner Jobs, shared PVCs (quota-bounded)
 # sast-system -> master-side: postgres, sonarqube (no quota; not on the scan budget)
-apiVersion: v1
-kind: Namespace
+apiVersion: v1 # core API group
+kind: Namespace # isolate worker-side scan resources
 metadata:
-  name: sast
+  name: sast # worker namespace name
 ---
 apiVersion: v1
-kind: Namespace
+kind: Namespace # isolate control-plane services
 metadata:
-  name: sast-system
+  name: sast-system # master namespace name

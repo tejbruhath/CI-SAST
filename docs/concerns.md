@@ -98,14 +98,18 @@ manufacturing orphans. The reaper now catches them *after* `CELERY_TASK_TIME_LIM
 **Fix:** add a volume + `appendonly yes`, or accept it and rely on the reaper.
 Worth noting the failure is *silent* — no user-visible signal that a scan died.
 
-### 10. Triage is a serial LLM loop
-`_triage_and_fix` iterates findings one at a time, one blocking HTTP call each,
-against a *reasoning* model (~2-6s per call). 47 findings ≈ 47 sequential triage
-calls ≈ several minutes before the scan reports `complete` — and findings are now
-gated behind that, so the dashboard shows nothing until it's done.
-
-**Fix:** a Celery `group`/`chord` to fan triage out, or an async batch. This is
-the single biggest UX win available and it is not small.
+### 10. ~~Triage is a serial LLM loop~~ — fixed 2026-07-15
+`_triage_and_fix` used to iterate findings one at a time, one blocking HTTP
+call each. Now it batches findings in groups of `TRIAGE_BATCH_SIZE` (100,
+DeepSeek's concurrent-request ceiling) and fans each batch out across a
+`ThreadPoolExecutor` — worker threads do only the DeepSeek HTTP calls, no ORM
+access, so there's no per-thread DB connection leak and it stays test-safe
+under `TestCase`'s transaction wrapping. `Scan.triage_total`/`triage_done` are
+saved after each batch. Findings are still gated behind the whole scan
+finishing (that part of this concern is now tracked as #15), but the wait
+itself is ~100x shorter for a same-sized repo and the dashboard now shows an
+"AI TRIAGE RUNNING: done/total" indicator (`QueueStatus.jsx`) instead of going
+quiet.
 
 ### 11. The dynamic pipeline has never completed successfully
 The only dynamic scan ever attempted (`c750ce07`) is the zombie. The `nuclei`
@@ -142,6 +146,42 @@ By design (you asked for it): the list filters to
 `scan__status__in=[complete, partial, failed]`. The consequence is that a scan
 which never completes shows **nothing** — no partial results, and no explanation
 in the UI. Combined with #10, a big repo means minutes of an empty dashboard.
+
+### 23. AI-picked fix versions have no live source of truth
+`deepseek.generate_fix` uses one system prompt (`FIX_SYSTEM`) for every finding
+type: "propose the minimal edit that fixes it." For a code-level finding (SQLi
+in our own code, a missing sanitizer) that framing is right. For a
+dependency-version finding (Trivy flagging `Django==4.2.13` for CVE-2024-42005)
+it is wrong: the model named `4.2.15` — the version where that specific CVE's
+changelog entry landed, straight from training-data memory. It shipped in a
+real PR (`tejbruhath/VaulS.ai#2`) and CodeRabbit's OSV-Scanner pass on that PR
+flagged it: `4.2.15` itself carries dozens of later CVEs, and the whole 4.2 LTS
+line reached end-of-life in April 2026 (final release `4.2.30`). "Minimal
+version bump that resolves the named CVE" and "current secure version" are
+different questions, and only an LLM with zero live data was asked to answer
+one of them by guessing at the other.
+
+**Fix:** split the fix-prompt on finding type. Dependency/SCA findings
+(Trivy, etc.) should resolve the target version from a live source — PyPI's
+simple API, or OSV's `fixed` range for the package — and hand the LLM only the
+old_str/new_str mechanics against that resolved version. Code-edit findings
+keep the current LLM-only path; there's no freshness problem there. Small: one
+new lookup function, one branch in `generate_fix`.
+
+**Broader lesson:** don't ask an LLM a question that has a live, checkable
+answer. Detection (OSV-Scanner's fixed-range data) and remediation (picking a
+replacement version) are different problems; only the first is safe to
+delegate to a model with a training cutoff.
+
+### 24. `metrics` ignored `?repo=` — one repo's dashboard showed another's totals
+`GET /api/v1/metrics` never took a `repo` param, unlike `/scans` and
+`/findings`, which both filter on `scan__target__icontains=repo`. Every repo's
+dashboard showed the same account-wide totals (findings, critical/high, scans,
+fixes proposed/approved) while the findings table below it was correctly
+scoped — a silent mismatch, not an error, so it read as "this repo has 94
+findings" when the live table said zero. Fixed 2026-07-15: `metrics()` now
+filters `all_findings`/`scans_qs`/`own_fixes` on `repo` when the query param is
+present; `api.js` and `App.jsx` now pass the selected repo through.
 
 ## Testing gaps
 

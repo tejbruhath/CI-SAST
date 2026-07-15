@@ -1,15 +1,15 @@
 # Sentriq backend + ci-utils orchestrator
-Django>=5.2,<5.3
-djangorestframework>=3.15,<3.16
-django-cors-headers>=4.4,<4.7
-celery>=5.4,<5.5
-redis>=5.0,<5.3
-httpx>=0.27,<0.29
-gunicorn>=22,<24
-psycopg2-binary>=2.9,<3.0
-kubernetes>=29,<30
+Django>=5.2,<5.3                 # Web framework and ORM for all API/DB work
+djangorestframework>=3.15,<3.16  # DRF: JSON API views, serializers, permissions
+django-cors-headers>=4.4,<4.7   # CORS middleware so the SPA can call the API
+celery>=5.4,<5.5                 # Async task queue for scan jobs and beat scheduler
+redis>=5.0,<5.3                  # Celery broker + result backend and job state store
+httpx>=0.27,<0.29                # Sync HTTP client for GitHub OAuth and DeepSeek LLM
+gunicorn>=22,<24                 # WSGI server that runs the Django app in production
+psycopg2-binary>=2.9,<3.0       # PostgreSQL adapter for Django database backend
+kubernetes>=29,<30               # k8s client for orchestrator dispatcher Job control
 
 # GitHub OAuth + token encryption
-cryptography>=42,<45
-PyJWT>=2.8,<3.0
-python-dotenv>=1.0,<2.0
+cryptography>=42,<45             # Fernet symmetric encryption for stored OAuth tokens
+PyJWT>=2.8,<3.0                  # JWT parsing if needed for future token validation
+python-dotenv>=1.0,<2.0          # Load .env file into os.environ for local dev

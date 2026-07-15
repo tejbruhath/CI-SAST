@@ -1,37 +1,37 @@
 # ci-utils dispatcher needs to create/delete/watch scanner Jobs, read pods,
 # and read the ResourceQuota status for the capacity check. Scoped to ns sast.
 apiVersion: v1
-kind: ServiceAccount
+kind: ServiceAccount # identity for ci-utils pods
 metadata:
-  name: ci-utils
-  namespace: sast
+  name: ci-utils # SA name referenced by Deployment
+  namespace: sast # worker namespace only
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: Role # permissions limited to one namespace
 metadata:
   name: ci-utils
   namespace: sast
 rules:
-  - apiGroups: ["batch"]
+  - apiGroups: ["batch"] # Job API
     resources: ["jobs"]
-    verbs: ["create", "delete", "get", "list", "watch"]
-  - apiGroups: [""]
-    resources: ["pods", "pods/log"]
+    verbs: ["create", "delete", "get", "list", "watch"] # full Job lifecycle
+  - apiGroups: [""] # core API
+    resources: ["pods", "pods/log"] # inspect scanner pods/logs
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
-    resources: ["resourcequotas"]
+    resources: ["resourcequotas"] # capacity gate for dispatch
     verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
+kind: RoleBinding # attach Role to ServiceAccount
 metadata:
   name: ci-utils
   namespace: sast
 subjects:
   - kind: ServiceAccount
-    name: ci-utils
+    name: ci-utils # SA from above
     namespace: sast
 roleRef:
   kind: Role
-  name: ci-utils
+  name: ci-utils # Role from above
   apiGroup: rbac.authorization.k8s.io

@@ -1,7 +1,7 @@
 """Tests for PR auth (per-user OAuth token) and fix-request throttling.
 
 Run:
-  USE_SQLITE=1 python manage.py test sentriq.test_prauth
+  USE_SQLITE=1 python manage.py test tests.test_prauth
 """
 import os
 import tempfile

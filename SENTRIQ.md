@@ -88,7 +88,7 @@ for the known gaps.
 ```bash
 cd ci-utils && python -m venv .venv && .venv/bin/pip install -r requirements.txt
 USE_SQLITE=1 .venv/bin/python manage.py migrate
-USE_SQLITE=1 .venv/bin/python manage.py test sentriq   # 24 tests
+USE_SQLITE=1 .venv/bin/python manage.py test tests     # 24 tests
 USE_SQLITE=1 .venv/bin/python smoke_test.py     # end-to-end pipeline test (tools + LLM mocked)
 ```
 Component self-tests: `python -m sentriq.schema`, `python -m sentriq.aggregator`,
