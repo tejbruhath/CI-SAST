@@ -35,6 +35,9 @@ COPY . .
 
 # Document the API listen port (gunicorn binds here at runtime).
 EXPOSE 8080
+
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+USER appuser
 # Default command runs the API (migrations first). The worker service overrides
 # this with a celery command (see docker-compose.yml).
 # Migrate DB schema, then serve WSGI with three workers and 120s timeout.
