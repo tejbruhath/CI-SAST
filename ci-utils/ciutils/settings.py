@@ -69,8 +69,6 @@ REST_FRAMEWORK = {  # Global DRF defaults for auth, permissions, and JSON I/O.
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],  # Require login by default.
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],  # Always respond with JSON.
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],  # Accept JSON request bodies.
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.LimitOffsetPagination",  # ?limit=&offset= style lists.
-    "PAGE_SIZE": 100,  # Default page size for list endpoints.
     "UNAUTHENTICATED_USER": None,  # Anonymous user is None instead of AnonymousUser.
     "EXCEPTION_HANDLER": "sentriq.auth_views.auth_exception_handler",  # Custom API error JSON shape.
 }

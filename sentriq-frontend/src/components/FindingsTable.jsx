@@ -1,16 +1,17 @@
 import { SeverityBadge, VerdictBadge, ToolBadge } from "./Badge.jsx";
+import NoBugsFound from "./NoBugsFound.jsx";
 
 const SEVS = ["critical", "high", "medium", "low", "info"];
 const TOOLS = ["gitleaks", "semgrep", "trivy", "zap", "nuclei"];
 const VERDICTS = ["real", "false_positive", "noise", "error"];
 
 // Renders the AI-fix remediation lifecycle for one finding.
-// No fix → "FIX WITH AI". Fix proposed → "APPROVE NEEDED" (click to approve).
-// Approved → "APPROVED" (it will be included in the next PR).
+// No fix → "FIX WITH AI". Fix proposed → "PLEASE APPROVE" (open row for HITL).
+// Approved → "APPROVED" (included in the next PR).
 // creating → QUEUED. open → DONE (links to PR). failed → RETRY.
 //
-// Nothing reaches a PR without passing through the approve step here.
-function FixCell({ id, fix, onFixWithAi, onApprove, fixingIds, busy }) {
+// Nothing reaches a PR without Approve in the detail dialog.
+function FixCell({ id, fix, onFixWithAi, fixingIds, busy }) {
   const stop = (e) => e.stopPropagation();
   const disabled = busy || fixingIds?.has(id);
 
@@ -47,7 +48,8 @@ function FixCell({ id, fix, onFixWithAi, onApprove, fixingIds, busy }) {
     return <span className="text-tertiary font-bold animate-pulse">QUEUED…</span>;
   }
 
-  if (pr_status === "failed") {
+  // Generation failure or PR push failure — both offer RETRY via Fix with AI.
+  if (pr_status === "failed" || fix.status === "failed") {
     return action(
       "RETRY",
       "border-error text-error hover:bg-error hover:text-black",
@@ -65,15 +67,15 @@ function FixCell({ id, fix, onFixWithAi, onApprove, fixingIds, busy }) {
     );
   }
 
-  // proposed: the fix exists but you have not okayed it yet.
-  return action(
-    "APPROVE NEEDED",
-    "border-tertiary text-tertiary hover:bg-tertiary hover:text-black",
-    (e) => { stop(e); onApprove?.(id); }
+  // proposed: open the row to Approve / Deny / Edit — no one-click approve here.
+  return (
+    <span className="text-tertiary font-bold" title="Open finding to review the fix">
+      PLEASE APPROVE
+    </span>
   );
 }
 
-export default function FindingsTable({ findings, filters, setFilters, onPick, selected, onFixWithAi, onApprove, fixingIds, busy }) {
+export default function FindingsTable({ findings, filters, setFilters, onPick, selected, onFixWithAi, fixingIds, busy }) {
   const set = (k) => (e) => setFilters({ ...filters, [k]: e.target.value });
 
   return (
@@ -127,11 +129,7 @@ export default function FindingsTable({ findings, filters, setFilters, onPick, s
           </thead>
           <tbody className="text-on-surface">
             {findings.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="p-8 text-center text-on-surface-variant font-body-md">
-                  No findings match.
-                </td>
-              </tr>
+              <NoBugsFound />
             ) : (
               findings.map((f) => (
                 <tr
@@ -157,7 +155,7 @@ export default function FindingsTable({ findings, filters, setFilters, onPick, s
                     <VerdictBadge verdict={f.verdict} severity={f.severity} />
                   </td>
                   <td className="p-3 font-code-label text-xs">
-                    <FixCell id={f.id} fix={f.fix} onFixWithAi={onFixWithAi} onApprove={onApprove} fixingIds={fixingIds} busy={busy} />
+                    <FixCell id={f.id} fix={f.fix} onFixWithAi={onFixWithAi} fixingIds={fixingIds} busy={busy} />
                   </td>
                 </tr>
               ))

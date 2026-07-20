@@ -13,6 +13,7 @@ import FindingDetail from "./components/FindingDetail.jsx";
 import AssetsPanel from "./components/AssetsPanel.jsx";
 import MetricsPanel from "./components/MetricsPanel.jsx";
 import CreatePrDialog from "./components/CreatePrDialog.jsx";
+import FixAllDialog from "./components/FixAllDialog.jsx";
 
 const POLL_MS = 3000;
 
@@ -46,6 +47,8 @@ export default function App() {
   // pr_status flip to "open", so the live list can't be used to render the
   // post-result dialog (it would read as "nothing approved").
   const [prSnapshot, setPrSnapshot] = useState([]);
+  const [fixAllOpen, setFixAllOpen] = useState(false);
+  const [fixAllBusy, setFixAllBusy] = useState(false);
 
   // -------------------------------------------------------------------------
   // Auth
@@ -238,6 +241,26 @@ export default function App() {
     }
   };
 
+  const doDeny = async (id) => {
+    try {
+      await api.findings.hitl(id, "deny", user?.login || "reviewer");
+      await refresh();
+      if (selectedId === id) await reloadDetail(id);
+    } catch (e) {
+      setErr(e.message);
+    }
+  };
+
+  const doEdit = async (id, editedDiff) => {
+    try {
+      await api.findings.hitl(id, "edit", user?.login || "reviewer", "", editedDiff);
+      await refresh();
+      if (selectedId === id) await reloadDetail(id);
+    } catch (e) {
+      setErr(e.message);
+    }
+  };
+
   // Every approved fix for this repo that has not already gone into a PR.
   const approvedFindings = findings.filter(
     (f) => f.fix && ["approved", "edited"].includes(f.fix.status) && f.fix.pr_status === "none"
@@ -273,13 +296,21 @@ export default function App() {
     }
   };
 
-  // Enabled only once you've actually approved something — a fix merely
-  // existing is not consent. Never silently picks a finding for you.
-  const canCreatePr = approvedFindings.length > 0;
-
   const handleCreatePr = () => {
     setPrResult(null);
     setPrOpen(true);
+  };
+
+  const canFixAll = findings.length > 0;
+
+  const doFixAll = async (ids) => {
+    setFixAllBusy(true);
+    try {
+      await Promise.all(ids.map((id) => doFixWithAi(id)));
+      setFixAllOpen(false);
+    } finally {
+      setFixAllBusy(false);
+    }
   };
 
   // The detail serializer returns `scan` as an id, so enrich it with the scan
@@ -328,7 +359,7 @@ export default function App() {
         }}
       />
 
-      <Sidebar user={user} activeTab={tab} onNavigate={setTab} onLogout={logout} canCreatePr={canCreatePr} onCreatePr={handleCreatePr} />
+      <Sidebar user={user} activeTab={tab} onNavigate={setTab} onLogout={logout} onCreatePr={handleCreatePr} canFixAll={canFixAll} onFixAll={() => setFixAllOpen(true)} />
 
       <main className="flex-1 flex flex-col min-w-0 min-h-0 pl-64 z-10 relative">
         <Header repo={selectedRepo} user={user} onLogout={logout} />
@@ -400,13 +431,26 @@ export default function App() {
         />
       )}
 
+      {fixAllOpen && (
+        <FixAllDialog
+          findings={findings}
+          busy={fixAllBusy}
+          onConfirm={doFixAll}
+          onClose={() => setFixAllOpen(false)}
+        />
+      )}
+
       {detail && (
         <FindingDetail
           finding={detailFinding}
           onClose={() => setSelectedId(null)}
           onFixWithAi={doFixWithAi}
           onCreatePr={doCreatePr}
+          onApprove={doApprove}
+          onDeny={doDeny}
+          onEdit={doEdit}
           busy={busy}
+          fixing={fixingIds.has(detail.id)}
         />
       )}
     </div>

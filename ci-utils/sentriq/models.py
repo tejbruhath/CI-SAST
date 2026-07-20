@@ -100,8 +100,8 @@ class Triage(models.Model):
 
 class FixSuggestion(models.Model):
     """AI-generated patch for a finding, plus optional PR automation state."""
-    PROPOSED, APPROVED, DENIED, EDITED = "proposed", "approved", "denied", "edited"  # HITL review states
-    STATUS = [(s, s) for s in (PROPOSED, APPROVED, DENIED, EDITED)]  # review status choices
+    PROPOSED, APPROVED, DENIED, EDITED, FAILED = "proposed", "approved", "denied", "edited", "failed"  # HITL review states (+ gen failure)
+    STATUS = [(s, s) for s in (PROPOSED, APPROVED, DENIED, EDITED, FAILED)]  # review status choices
     # PR lifecycle (separate from the human-review status above).
     PR_NONE, PR_CREATING, PR_OPEN, PR_FAILED = "none", "creating", "open", "failed"  # PR states
     PR_STATUS = [(s, s) for s in (PR_NONE, PR_CREATING, PR_OPEN, PR_FAILED)]  # PR choices

@@ -122,7 +122,7 @@ def _fix_prompt(finding: Dict[str, Any], file_text: str) -> str:
         header = f"Excerpt of {path} (the file is large; edit only what you see here):"
     else:
         header = f"Full contents of {path}:"  # small files fit entirely
-    return (
+    prompt = (
         f"Tool: {finding.get('tool')}\n"
         f"Type: {finding.get('type')}\n"
         f"Severity: {finding.get('severity')}\n"
@@ -133,6 +133,16 @@ def _fix_prompt(finding: Dict[str, Any], file_text: str) -> str:
         f"{header}\n```\n{body}\n```\n\n"
         "Copy old_str verbatim from the text above."  # critical instruction
     )
+    fixed_version = finding.get("details", {}).get("fixed_version")
+    if fixed_version:
+        prompt += (
+            f"\nAuthoritative fixed version (from the scanner's CVE database, "
+            f"NOT your training knowledge): {fixed_version}. The new_str MUST "
+            f"upgrade to exactly this version — do not substitute a different "
+            f"version number from memory, even if you believe another version "
+            f"is more current."
+        )
+    return prompt
 
 
 def _window(text: str, line: Optional[int], radius: int = 60) -> str:
@@ -171,6 +181,40 @@ def _unified_diff(path: str, before: str, after: str) -> str:
     return diff if diff.endswith("\n") else diff + "\n"  # trailing newline for apply
 
 
+
+def _is_secret_finding(finding: Dict[str, Any]) -> bool:
+    """True for gitleaks / secret-type findings (no code patch is appropriate)."""
+    tool = str(finding.get("tool") or "").lower()
+    ftype = str(finding.get("type") or "").lower()
+    return tool == "gitleaks" or ftype == "secret"
+
+
+def _secret_remediation(finding: Dict[str, Any]) -> FixResult:
+    """Guidance-only "fix" for leaked secrets — never invent a code patch.
+
+    Secrets should be rotated and moved to env/secrets managers, not rewritten
+    in-repo by an LLM. Returns ok=True with empty diff so the UI can show steps.
+    """
+    rule = finding.get("rule_id") or finding.get("details", {}).get("secret_type") or "credential"
+    path = finding.get("file") or "the affected file"
+    line = finding.get("line")
+    where = f"{path}:{line}" if line else path
+    explanation = (
+        f"Secret detection ({rule}) at {where}. Do not commit a code patch that "
+        f"just deletes or rewrites the leaked value in place.\n\n"
+        f"Recommended steps:\n"
+        f"1. Rotate/revoke the exposed credential immediately (provider dashboard or CLI).\n"
+        f"2. Move the secret out of source into environment variables or a secrets manager.\n"
+        f"3. Create a local `.env` (or use your platform secrets) and load it at runtime "
+        f"— never commit `.env`; add it to `.gitignore`.\n"
+        f"4. Replace hard-coded values with `os.environ[...]` / config lookups.\n"
+        f"5. Purge the secret from git history if it was ever committed "
+        f"(e.g. git filter-repo / BFG) and force-protect the default branch.\n"
+        f"6. Re-scan after rotation to confirm the leak is gone."
+    )
+    return FixResult(diff="", explanation=explanation, ok=True)
+
+
 def generate_fix(finding: Dict[str, Any], file_text: str = "") -> FixResult:
     """Ask the LLM which text to swap, then compute the diff ourselves.
 
@@ -181,7 +225,13 @@ def generate_fix(finding: Dict[str, Any], file_text: str = "") -> FixResult:
 
     Takes the raw file text, never the line-numbered triage snippet: `12: code`
     prefixes are exactly what the model cannot turn back into a valid patch.
+
+    Secret findings (gitleaks) skip the LLM and return remediation guidance only
+    — rotating credentials / .env is the fix, not an in-repo string rewrite.
     """
+    if _is_secret_finding(finding):
+        return _secret_remediation(finding)
+
     path = finding.get("file") or ""  # need a path for diff headers
     if not file_text or not path:  # nothing to anchor against
         return FixResult("", "no file context available to fix against", False)
@@ -236,4 +286,8 @@ if __name__ == "__main__":  # offline self-test when run as a script
     assert diff.startswith("--- a/f.txt\n+++ b/f.txt\n"), diff  # git-style paths
     assert "@@ -11,7 +11,7 @@" in diff, diff  # expected hunk header
     assert "-line14\n+patched\n" in diff, diff  # expected change lines
+    # Secrets never need file text / LLM — always return guidance with empty diff.
+    sec = generate_fix({"tool": "gitleaks", "type": "secret", "rule_id": "aws-key",
+                         "file": "app.py", "line": 10})
+    assert sec.ok and sec.diff == "" and ".env" in sec.explanation, sec
     print("deepseek self-check passed (offline guards + diff builder OK)")

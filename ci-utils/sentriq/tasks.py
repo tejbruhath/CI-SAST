@@ -191,8 +191,8 @@ def generate_fix_for_finding(finding_id: str) -> dict:
     """On-demand fix generation for a single finding.
 
     Re-clones the scan target, reads the affected file, asks the LLM for a fix,
-    and stores it as APPROVED (the user clicking "Fix with AI" is the human
-    decision). Idempotent: returns an existing fix if one already exists.
+    and stores it as PROPOSED (the user must still Approve in the UI). Idempotent
+    for successful fixes; FAILED / empty-diff rows are deleted so RETRY works.
     Never raises.
     """
     from . import deepseek
@@ -205,7 +205,14 @@ def generate_fix_for_finding(finding_id: str) -> dict:
 
     existing = row.fixes.first()  # newest fix if any
     if existing:
-        return {"finding": finding_id, "status": "exists", "fix": str(existing.id)}
+        # Successful proposal/approval — do not stack duplicates.
+        if existing.status != FixSuggestion.FAILED and (existing.diff or "").strip():
+            return {"finding": finding_id, "status": "exists", "fix": str(existing.id)}
+        # Secrets guidance (and other guidance-only fixes) have empty diff but
+        # a non-FAILED status — keep those too.
+        if existing.status != FixSuggestion.FAILED and (existing.explanation or "").strip():
+            return {"finding": finding_id, "status": "exists", "fix": str(existing.id)}
+        existing.delete()  # FAILED or empty → allow retry
 
     scan = row.scan  # parent scan for clone target and provenance
     ProvenanceEvent.record(ProvenanceEvent.FIX, "on-demand fix generation started",
@@ -220,18 +227,29 @@ def generate_fix_for_finding(finding_id: str) -> dict:
         if fx.ok:
             fix = FixSuggestion.objects.create(
                 finding=row, diff=fx.diff, explanation=fx.explanation,
-                status=FixSuggestion.APPROVED, model=config.DEEPSEEK_MODEL)  # user-intent
+                status=FixSuggestion.PROPOSED, model=config.DEEPSEEK_MODEL)  # HITL next
             ProvenanceEvent.record(ProvenanceEvent.FIX, "on-demand fix generated",
                                    scan=scan, finding=row, fix=str(fix.id))
             return {"finding": finding_id, "status": "created", "fix": str(fix.id)}
+        # Persist failure so the UI can clear FIXING… and offer RETRY.
+        fix = FixSuggestion.objects.create(
+            finding=row, diff="", explanation=fx.explanation or "fix generation failed",
+            status=FixSuggestion.FAILED, model=config.DEEPSEEK_MODEL)
         ProvenanceEvent.record(ProvenanceEvent.FIX, "on-demand fix failed",
-                               scan=scan, finding=row, error=fx.explanation)
-        return {"finding": finding_id, "status": "failed", "reason": fx.explanation}
+                               scan=scan, finding=row, fix=str(fix.id),
+                               error=fx.explanation)
+        return {"finding": finding_id, "status": "failed", "reason": fx.explanation,
+                "fix": str(fix.id)}
     except Exception as exc:
         logger.exception("generate_fix failed for finding %s", finding_id)
+        reason = str(exc)[:500]
+        fix = FixSuggestion.objects.create(
+            finding=row, diff="", explanation=reason,
+            status=FixSuggestion.FAILED, model=config.DEEPSEEK_MODEL)
         ProvenanceEvent.record(ProvenanceEvent.FIX, "on-demand fix errored",
-                               scan=scan, finding=row, error=str(exc)[:500])
-        return {"finding": finding_id, "status": "error", "reason": str(exc)}
+                               scan=scan, finding=row, fix=str(fix.id), error=reason)
+        return {"finding": finding_id, "status": "error", "reason": reason,
+                "fix": str(fix.id)}
     finally:
         if work_dir:
             executor.cleanup(work_dir)  # always remove temp clone

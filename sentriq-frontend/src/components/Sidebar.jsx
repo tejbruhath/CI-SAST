@@ -1,4 +1,4 @@
-export default function Sidebar({ user, activeTab = "dashboard", onNavigate, onLogout, canCreatePr, onCreatePr }) {
+export default function Sidebar({ user, activeTab = "dashboard", onNavigate, onLogout, onCreatePr, canFixAll, onFixAll }) {
   // Left nav: tabs + primary actions + logout.
   const navItems = [
     { id: "dashboard", label: "Dashboard", icon: "dashboard" }, // main overview
@@ -47,9 +47,15 @@ export default function Sidebar({ user, activeTab = "dashboard", onNavigate, onL
           START NEW SCAN
         </button>
         <button
-          onClick={onCreatePr} // batch PR for approved fixes
-          disabled={!canCreatePr} // disabled until approvals exist
+          onClick={onFixAll} // bulk-queue AI fixes for matching findings
+          disabled={!canFixAll}
           className="w-full bg-primary text-on-primary border-2 border-primary font-code-label font-bold py-2 uppercase hover:bg-inverse-primary hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          FIX ALL WITH AI
+        </button>
+        <button
+          onClick={onCreatePr} // always opens; dialog tells you to approve a fix first if none are approved yet
+          className="w-full bg-primary text-on-primary border-2 border-primary font-code-label font-bold py-2 uppercase hover:bg-inverse-primary hover:text-white transition-colors"
         >
           CREATE PR
         </button>

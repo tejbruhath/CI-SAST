@@ -126,7 +126,10 @@ def findings(request):
         qs = qs.filter(scan__target__icontains=repo)  # filter via related scan target
     verdict = request.query_params.get("verdict")
     if verdict:
-        qs = qs.filter(triage__verdict=verdict)  # real / FP / noise from triage
+        if verdict == "pending":
+            qs = qs.filter(triage__isnull=True)  # untriaged findings have no Triage row
+        else:
+            qs = qs.filter(triage__verdict=verdict)  # real / FP / noise from triage
     return Response(FindingListSerializer(qs[:500], many=True).data)  # hard list cap
 
 

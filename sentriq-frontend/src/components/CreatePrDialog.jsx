@@ -69,7 +69,7 @@ export default function CreatePrDialog({
           {approved.length === 0 ? (
             <p className="font-body-md text-on-surface-variant">
               Nothing approved yet. Approve a fix first — the FIX column shows
-              “APPROVE NEEDED” for any fix awaiting you.
+              “PLEASE APPROVE” for any fix awaiting you.
             </p>
           ) : (
             <ul className="flex flex-col gap-2">

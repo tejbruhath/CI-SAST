@@ -99,18 +99,18 @@ def main():
     r = c.get(f"/api/v1/findings/{fid}")
     assert r.status_code == 200 and r.json()["triage"]["verdict"] == "real"
 
-    # ---- on-demand fix: the user clicking "Fix with AI" IS the approval ----
+    # ---- on-demand fix: generates PROPOSED; human must still Approve ----
     r = c.post(f"/api/v1/findings/{fid}/fix")
     assert r.status_code == 202, r.content
     fix = FixSuggestion.objects.get(finding_id=fid)
-    assert fix.status == FixSuggestion.APPROVED, fix.status
+    assert fix.status == FixSuggestion.PROPOSED, fix.status
     # Asking twice must not stack up duplicate patches.
     c.post(f"/api/v1/findings/{fid}/fix")
     assert FixSuggestion.objects.filter(finding_id=fid).count() == 1
 
     r = c.get("/api/v1/metrics")
     m = r.json()
-    assert m["totals"]["findings"] == 3 and m["totals"]["fixes_approved"] == 1, m
+    assert m["totals"]["findings"] == 3 and m["totals"]["fixes_approved"] == 0, m
 
     r = c.get(f"/api/v1/provenance?scan={scan.id}")
     assert r.status_code == 200 and len(r.json()) >= 5

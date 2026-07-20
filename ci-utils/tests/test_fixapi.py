@@ -45,9 +45,9 @@ class FixApiTests(TestCase):
     @patch.object(executor, "git_clone")
     @patch.object(executor, "make_scratch")
     @patch("sentriq.deepseek.generate_fix")
-    def test_post_fix_returns_202_and_creates_approved_suggestion(
+    def test_post_fix_returns_202_and_creates_proposed_suggestion(
             self, gen_mock, scratch_mock, clone_mock, cleanup_mock):
-        """Clicking 'Fix with AI' queues generation and stores an APPROVED fix."""
+        """Clicking 'Fix with AI' queues generation and stores a PROPOSED fix."""
         scan = self._complete_scan()
         finding = self._finding(scan)
 
@@ -68,7 +68,7 @@ class FixApiTests(TestCase):
         self.assertEqual(r.json()["status"], "queued")
 
         fix = FixSuggestion.objects.get(finding=finding)
-        self.assertEqual(fix.status, FixSuggestion.APPROVED)
+        self.assertEqual(fix.status, FixSuggestion.PROPOSED)
         self.assertTrue(fix.diff)
         gen_mock.assert_called_once()
         self.assertTrue(
@@ -152,3 +152,57 @@ class FixApiTests(TestCase):
             ProvenanceEvent.objects.filter(
                 scan=stale, stage=ProvenanceEvent.SCAN,
                 event="orphaned scan reaped").exists())
+
+    @patch.object(executor, "cleanup")
+    @patch.object(executor, "git_clone")
+    @patch.object(executor, "make_scratch")
+    @patch("sentriq.deepseek.generate_fix")
+    def test_post_fix_persists_failed_suggestion(
+            self, gen_mock, scratch_mock, clone_mock, cleanup_mock):
+        """Failed generation still creates a FAILED fix so the UI can clear FIXING."""
+        scan = self._complete_scan()
+        finding = self._finding(scan)
+        work_dir = tempfile.mkdtemp()
+        scratch_mock.return_value = work_dir
+        clone_mock.return_value = None
+        cleanup_mock.return_value = None
+        gen_mock.return_value = FixResult(diff="", explanation="no match", ok=False)
+
+        r = self.client.post(f"/api/v1/findings/{finding.id}/fix",
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 202)
+        fix = FixSuggestion.objects.get(finding=finding)
+        self.assertEqual(fix.status, FixSuggestion.FAILED)
+        self.assertEqual(fix.explanation, "no match")
+
+    @patch.object(executor, "cleanup")
+    @patch.object(executor, "git_clone")
+    @patch.object(executor, "make_scratch")
+    @patch("sentriq.deepseek.generate_fix")
+    def test_post_fix_retries_after_failed(
+            self, gen_mock, scratch_mock, clone_mock, cleanup_mock):
+        """RETRY after FAILED deletes the failed row and stores a new proposal."""
+        scan = self._complete_scan()
+        finding = self._finding(scan)
+        work_dir = tempfile.mkdtemp()
+        os.makedirs(os.path.join(work_dir, "app"), exist_ok=True)
+        with open(os.path.join(work_dir, "app", "s.py"), "w") as f:
+            f.write("bad\n")
+        scratch_mock.return_value = work_dir
+        clone_mock.return_value = None
+        cleanup_mock.return_value = None
+        gen_mock.side_effect = [
+            FixResult(diff="", explanation="no match", ok=False),
+            FixResult(diff="--- a/app/s.py\n+++ b/app/s.py\n@@ -1 +1 @@\n-bad\n+good\n",
+                      explanation="fixed", ok=True),
+        ]
+        self.client.post(f"/api/v1/findings/{finding.id}/fix",
+                         content_type="application/json")
+        self.assertEqual(FixSuggestion.objects.get(finding=finding).status,
+                         FixSuggestion.FAILED)
+        self.client.post(f"/api/v1/findings/{finding.id}/fix",
+                         content_type="application/json")
+        fix = FixSuggestion.objects.get(finding=finding)
+        self.assertEqual(fix.status, FixSuggestion.PROPOSED)
+        self.assertTrue(fix.diff)
+        self.assertEqual(gen_mock.call_count, 2)
