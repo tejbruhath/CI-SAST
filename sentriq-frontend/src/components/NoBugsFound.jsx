@@ -16,12 +16,11 @@ const CONFETTI_COLORS = [
 /**
  * Celebratory empty state for the Live Findings dashboard.
  * Renders a prominent, centered panel inside a single table cell (or any
- * container). Fires a self-contained canvas confetti burst exactly once per
- * page load and cleans up after itself on unmount.
+ * container). Fires a self-contained DOM confetti burst exactly once per page
+ * load and cleans up after itself on unmount.
  */
 export default function NoBugsFound() {
   const containerRef = useRef(null);
-  const cleanupRef = useRef(null);
 
   useEffect(() => {
     // If confetti already fired in this page load, do nothing. This prevents
@@ -31,40 +30,17 @@ export default function NoBugsFound() {
     const container = containerRef.current;
     if (!container) return;
 
-    const canvas = document.createElement("canvas");
+    const wrapper = document.createElement("div");
+    wrapper.style.position = "absolute";
+    wrapper.style.inset = "0";
+    wrapper.style.pointerEvents = "none";
+    wrapper.style.zIndex = "0";
+    wrapper.style.overflow = "hidden";
+    wrapper.setAttribute("aria-hidden", "true");
+    container.appendChild(wrapper);
 
-    // Place the canvas behind the text so it doesn't obstruct the headline.
-    canvas.style.position = "absolute";
-    canvas.style.top = "0";
-    canvas.style.left = "0";
-    canvas.style.width = "100%";
-    canvas.style.height = "100%";
-    canvas.style.pointerEvents = "none";
-    canvas.style.zIndex = "0";
-    canvas.setAttribute("aria-hidden", "true");
-
-    container.appendChild(canvas);
-
-    // jsdom and some headless environments throw when asking for a 2D context.
-    let ctx;
-    try {
-      ctx = canvas.getContext("2d");
-    } catch {
-      if (canvas.parentNode === container) container.removeChild(canvas);
-      return;
-    }
-    if (!ctx) {
-      if (canvas.parentNode === container) container.removeChild(canvas);
-      return;
-    }
-
-    const dpr = window.devicePixelRatio || 1;
     const width = container.clientWidth;
     const height = container.clientHeight;
-
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    ctx.scale(dpr, dpr);
 
     // Build a burst of 60 rectangular pieces launched from the center.
     const particleCount = 60;
@@ -74,19 +50,29 @@ export default function NoBugsFound() {
       const speed = Math.random() * 4 + 2;
       const color =
         CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
+      const size = Math.random() * 6 + 4;
+
+      const el = document.createElement("div");
+      el.style.position = "absolute";
+      el.style.left = "0";
+      el.style.top = "0";
+      el.style.width = `${size}px`;
+      el.style.height = `${size * 0.6}px`;
+      el.style.backgroundColor = color;
+      el.style.willChange = "transform, opacity";
+      wrapper.appendChild(el);
+
       particles.push({
+        el,
         x: width / 2,
         y: height / 2,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed - 3,
         gravity: 0.15,
         drag: 0.96,
-        size: Math.random() * 6 + 4,
-        color,
+        size,
         rotation: Math.random() * Math.PI * 2,
         rotationSpeed: (Math.random() - 0.5) * 0.3,
-        tilt: (Math.random() - 0.5) * 0.5,
-        tiltSpeed: (Math.random() - 0.5) * 0.2,
         opacity: 1,
         decay: Math.random() * 0.008 + 0.004,
       });
@@ -101,19 +87,14 @@ export default function NoBugsFound() {
         cancelAnimationFrame(rafId);
         rafId = 0;
       }
-      if (canvas.parentNode === container) {
-        container.removeChild(canvas);
+      if (wrapper.parentNode === container) {
+        container.removeChild(wrapper);
       }
-      cleanupRef.current = null;
     };
-
-    cleanupRef.current = cleanup;
 
     const draw = (timestamp) => {
       if (!startTime) startTime = timestamp;
       const elapsed = timestamp - startTime;
-
-      ctx.clearRect(0, 0, width, height);
 
       let active = 0;
       for (const p of particles) {
@@ -126,17 +107,12 @@ export default function NoBugsFound() {
         p.x += p.vx;
         p.y += p.vy;
         p.rotation += p.rotationSpeed;
-        p.tilt += p.tiltSpeed;
         p.opacity -= p.decay;
 
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.rotation);
-        ctx.globalAlpha = Math.max(0, p.opacity);
-        ctx.fillStyle = p.color;
-        // Draw a small rotated rectangle (confetti flake).
-        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
-        ctx.restore();
+        p.el.style.transform = `translate(${p.x - p.size / 2}px, ${
+          p.y - p.size / 2
+        }px) rotate(${p.rotation}rad)`;
+        p.el.style.opacity = Math.max(0, p.opacity).toString();
       }
 
       if (elapsed < duration && active > 0) {
