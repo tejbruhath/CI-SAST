@@ -55,6 +55,31 @@ export function PipelineBadge({ pipeline }) {
   );
 }
 
+export function ContextBadge({ strategy }) {
+  if (!strategy || strategy === "none") return null;
+  const config = {
+    function_scope: {
+      label: "FUNCTION SCOPE",
+      classes: "border-primary text-primary bg-surface",
+    },
+    class_scope: {
+      label: "CLASS SCOPE",
+      classes: "border-secondary text-on-surface bg-surface-container",
+    },
+    file_window: {
+      label: "FILE WINDOW",
+      classes: "border-outline-variant text-outline bg-surface",
+    },
+  };
+  const c = config[strategy];
+  if (!c) return null;
+  return (
+    <span className={`inline-block font-code-label text-[10px] px-2 py-0.5 border-2 uppercase font-bold ${c.classes}`}>
+      {c.label}
+    </span>
+  );
+}
+
 export function StatusBadge({ status }) {
   // Scan lifecycle status with optional spinner for running.
   const styles = {

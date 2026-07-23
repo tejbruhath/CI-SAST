@@ -113,6 +113,7 @@ class FixSuggestion(models.Model):
     explanation = models.TextField(blank=True, default="")  # why this fix is safe/correct
     status = models.CharField(max_length=10, choices=STATUS, default=PROPOSED)  # human review state
     model = models.CharField(max_length=60, blank=True, default="")  # model that generated fix
+    context_strategy = models.CharField(max_length=20, blank=True, default="")  # function_scope | class_scope | file_window | none
     # PR automation state
     pr_status = models.CharField(max_length=10, choices=PR_STATUS, default=PR_NONE)  # PR pipeline state
     branch = models.CharField(max_length=200, blank=True, default="")  # branch name if pushed

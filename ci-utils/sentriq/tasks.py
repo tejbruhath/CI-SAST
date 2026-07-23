@@ -170,7 +170,8 @@ def _triage_and_fix(scan: Scan, rows, work_dir: str) -> None:
             if fx is not None and fx.ok:
                 FixSuggestion.objects.create(
                     finding=row, diff=fx.diff, explanation=fx.explanation,
-                    model=config.DEEPSEEK_MODEL)  # auto-generated, not yet approved
+                    model=config.DEEPSEEK_MODEL,
+                    context_strategy=fx.context_strategy)  # auto-generated, not yet approved
                 ProvenanceEvent.record(ProvenanceEvent.FIX, "fix generated",
                                        scan=scan, finding=row)
 
@@ -227,7 +228,8 @@ def generate_fix_for_finding(finding_id: str) -> dict:
         if fx.ok:
             fix = FixSuggestion.objects.create(
                 finding=row, diff=fx.diff, explanation=fx.explanation,
-                status=FixSuggestion.PROPOSED, model=config.DEEPSEEK_MODEL)  # HITL next
+                status=FixSuggestion.PROPOSED, model=config.DEEPSEEK_MODEL,
+                context_strategy=fx.context_strategy)  # HITL next
             ProvenanceEvent.record(ProvenanceEvent.FIX, "on-demand fix generated",
                                    scan=scan, finding=row, fix=str(fix.id))
             return {"finding": finding_id, "status": "created", "fix": str(fix.id)}

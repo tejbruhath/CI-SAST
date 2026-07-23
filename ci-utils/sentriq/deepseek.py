@@ -39,6 +39,7 @@ class FixResult:
     diff: str               # unified diff, or "" if none
     explanation: str  # why the change fixes the issue
     ok: bool  # True only when a usable non-empty diff exists
+    context_strategy: str = ""  # function_scope | class_scope | file_window | none
 
 
 _VALID_VERDICTS = {"real", "false_positive", "noise"}  # allowed triage labels
@@ -109,19 +110,32 @@ def _finding_prompt(finding: Dict[str, Any], snippet: str) -> str:
     )
 
 
-def _fix_prompt(finding: Dict[str, Any], file_text: str) -> str:
+def _fix_prompt(finding: Dict[str, Any], file_text: str) -> tuple[str, str]:
     """Fix prompt carries the real file text — old_str must be copied from it.
 
-    Large files are windowed around the finding so the anchor stays in view;
-    the uniqueness check still runs against the full text.
+    Large files get an AST-aware context (enclosing function/class + imports)
+    for .py files, falling back to a raw line-window for everything else so
+    the anchor stays in view; the uniqueness check still runs against the
+    full text either way. Returns (prompt, context_strategy).
     """
-    path = finding.get("file")  # relative path used in the prompt header
-    body = file_text  # default: send whole file
-    if len(file_text) > _MAX_FILE_CHARS:  # large file → window around line
-        body = _window(file_text, finding.get("line"))
-        header = f"Excerpt of {path} (the file is large; edit only what you see here):"
+    path = finding.get("file") or ""  # relative path used in the prompt header
+    strategy = "none"
+    if len(file_text) <= _MAX_FILE_CHARS:  # small files fit entirely
+        body = file_text
+        header = f"Full contents of {path}:"
     else:
-        header = f"Full contents of {path}:"  # small files fit entirely
+        assembled = None
+        if path.endswith(".py"):
+            from . import context as _context  # local import: avoid import cost when unused
+            assembled = _context.assemble_context(file_text, finding.get("line"))
+        if assembled is not None:
+            body = assembled.text
+            strategy = assembled.strategy
+            header = f"AST-aware context from {path} (edit only what you see here):"
+        else:
+            body = _window(file_text, finding.get("line"))
+            strategy = "file_window"
+            header = f"Excerpt of {path} (the file is large; edit only what you see here):"
     prompt = (
         f"Tool: {finding.get('tool')}\n"
         f"Type: {finding.get('type')}\n"
@@ -142,7 +156,7 @@ def _fix_prompt(finding: Dict[str, Any], file_text: str) -> str:
             f"version number from memory, even if you believe another version "
             f"is more current."
         )
-    return prompt
+    return prompt, strategy
 
 
 def _window(text: str, line: Optional[int], radius: int = 60) -> str:
@@ -236,7 +250,8 @@ def generate_fix(finding: Dict[str, Any], file_text: str = "") -> FixResult:
     if not file_text or not path:  # nothing to anchor against
         return FixResult("", "no file context available to fix against", False)
 
-    data = _chat(FIX_SYSTEM, _fix_prompt(finding, file_text))  # ask for old/new
+    prompt, context_strategy = _fix_prompt(finding, file_text)  # AST context or window
+    data = _chat(FIX_SYSTEM, prompt)  # ask for old/new
     if not data:  # API down or key missing
         return FixResult("", "LLM unavailable", False)
 
@@ -261,7 +276,8 @@ def generate_fix(finding: Dict[str, Any], file_text: str = "") -> FixResult:
         return FixResult("", explanation or "no change proposed", False)
 
     diff = _unified_diff(path, file_text, file_text.replace(old, new, 1))  # one swap
-    return FixResult(diff=diff, explanation=explanation, ok=bool(diff.strip()))
+    return FixResult(diff=diff, explanation=explanation, ok=bool(diff.strip()),
+                      context_strategy=context_strategy)
 
 
 if __name__ == "__main__":  # offline self-test when run as a script

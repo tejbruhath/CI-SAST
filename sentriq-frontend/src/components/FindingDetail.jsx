@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { SeverityBadge, ToolBadge, VerdictBadge } from "./Badge.jsx";
+import { SeverityBadge, ToolBadge, VerdictBadge, ContextBadge } from "./Badge.jsx";
 import DiffViewer from "./DiffViewer.jsx";
 
 function parseGithubSlug(targetUrl) {
@@ -164,9 +164,12 @@ export default function FindingDetail({
           {/* Suggested Fix / guidance */}
           {fix && (
             <section className="flex flex-col gap-4">
-              <h3 className="font-headline-sm text-headline-sm text-on-surface uppercase border-b-2 border-outline-variant pb-2">
-                {isFailed ? "Fix generation failed" : hasDiff ? "Suggested Fix" : "Recommended remediation"}
-              </h3>
+              <div className="flex items-center gap-2 border-b-2 border-outline-variant pb-2">
+                <h3 className="font-headline-sm text-headline-sm text-on-surface uppercase">
+                  {isFailed ? "Fix generation failed" : hasDiff ? "Suggested Fix" : "Recommended remediation"}
+                </h3>
+                <ContextBadge strategy={fix.context_strategy} />
+              </div>
               <p className="font-body-md text-body-md text-on-surface-variant whitespace-pre-wrap">
                 {fix.explanation || (isFailed ? "Unknown failure" : "")}
               </p>

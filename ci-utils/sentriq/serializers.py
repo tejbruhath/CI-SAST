@@ -44,7 +44,7 @@ class FixSuggestionSerializer(serializers.ModelSerializer):
     """Serialize an AI-generated fix (diff + PR state)."""
     class Meta:
         model = FixSuggestion  # source ORM model
-        fields = ["id", "diff", "explanation", "status", "model",
+        fields = ["id", "diff", "explanation", "status", "model", "context_strategy",
                   "pr_status", "branch", "pr_url", "pr_error", "created_at"]  # API fields
 
 
